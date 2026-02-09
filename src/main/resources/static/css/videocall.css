@@ -1,0 +1,85 @@
+.video-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background-color: #202124;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+#remoteVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#localVideo {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 200px;
+    height: 150px;
+    background-color: #000;
+    border-radius: 8px;
+    object-fit: cover;
+    z-index: 10;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+.controls {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 20px;
+    z-index: 20;
+    padding: 10px 20px;
+    background-color: rgba(0,0,0,0.5);
+    border-radius: 50px;
+}
+
+.control-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: none;
+    background-color: #3c4043;
+    color: white;
+    cursor: pointer;
+    font-size: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background-color 0.3s;
+}
+
+.control-btn:hover {
+    background-color: #4c5053;
+}
+
+.control-btn.hangup {
+    background-color: #ea4335;
+}
+
+.control-btn.hangup:hover {
+    background-color: #d93025;
+}
+
+.control-btn.active {
+    background-color: #ea4335;
+}
+
+#meetingInfo {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: white;
+    background-color: rgba(0,0,0,0.5);
+    padding: 10px;
+    border-radius: 8px;
+    z-index: 20;
+    font-family: sans-serif;
+}
