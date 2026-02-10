@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Bean;
 
 @SpringBootApplication
 public class VideocallApplication {
-	public static void main(String[] args) {
+	static void main(String[] args) {
 		SpringApplication.run(VideocallApplication.class, args);
 	}
 
