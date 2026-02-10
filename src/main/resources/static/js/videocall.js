@@ -1,3 +1,6 @@
+import { initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+
 const firebaseConfig = {
     apiKey: "API_KEY",
     authDomain: "AUTH_DOMAIN",
@@ -9,9 +12,9 @@ const firebaseConfig = {
 };
 
 if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
+    firebase = initializeApp(firebaseConfig);
 }
-const firestore = firebase.firestore();
+const firestore = getFirestore(firebase);
 
 // webrtc configuration
 const servers = {
