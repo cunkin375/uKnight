@@ -1,5 +1,4 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+// NOTE: firebase global set in videocall.html for testing
 
 const firebaseConfig = {
     apiKey: "API_KEY",
@@ -12,9 +11,9 @@ const firebaseConfig = {
 };
 
 if (!firebase.apps.length) {
-    firebase = initializeApp(firebaseConfig);
+    firebase.initializeApp(firebaseConfig);
 }
-const firestore = getFirestore(firebase);
+const firestore = firebase.firestore();
 
 // webrtc configuration
 const servers = {
