@@ -25,10 +25,14 @@ export function Navbar() {
                                 <span className="sr-only">GitHub</span>
                             </div>
                         </Link>
-                        <Button variant="ghost" size="sm">
-                            Log in
-                        </Button>
-                        <Button size="sm">Get Started</Button>
+                        <Link href="/login">
+                            <Button variant="ghost" size="sm">
+                                Log in
+                            </Button>
+                        </Link>
+                        <Link href="/signup">
+                            <Button size="sm">Get Started</Button>
+                        </Link>
                     </nav>
                 </div>
             </div>
