@@ -1,0 +1,84 @@
+"use client"
+
+import { useAuth } from "@/context/auth-context"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { motion } from "framer-motion"
+import { GraduationCap, Clock, User as UserIcon, Calendar } from "lucide-react"
+
+export default function ProfilePage() {
+    const { user } = useAuth()
+
+    if (!user) return null
+
+    // Mock stats for prototype
+    const stats = [
+        { label: "People Met", value: "12", icon: UserIcon },
+        { label: "Time Chatted", value: "45m", icon: Clock },
+        { label: "Joined", value: "Feb 2026", icon: Calendar },
+    ]
+
+    return (
+        <div className="container flex min-h-[calc(100vh-3.5rem)] max-w-4xl flex-col items-center py-10">
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full space-y-8"
+            >
+                <div className="flex flex-col items-center gap-4 text-center">
+                    <div className="relative">
+                        <Avatar className="h-32 w-32 border-4 border-background shadow-xl">
+                            <AvatarImage src={user.photoURL || ""} alt={user.displayName || "User"} />
+                            <AvatarFallback className="text-4xl">
+                                {user.displayName?.charAt(0) || user.email?.charAt(0)}
+                            </AvatarFallback>
+                        </Avatar>
+                        <div className="absolute bottom-0 right-0 rounded-full bg-background p-1">
+                            <div className="rounded-full bg-green-500 p-2 text-white">
+                                <GraduationCap className="h-5 w-5" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-1">
+                        <h1 className="text-3xl font-bold">{user.displayName || "Student"}</h1>
+                        <p className="text-muted-foreground">{user.email}</p>
+                    </div>
+
+                    <Badge variant="secondary" className="px-4 py-1 text-sm">
+                        Verified Student
+                    </Badge>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                    {stats.map((stat, i) => (
+                        <Card key={stat.label}>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">
+                                    {stat.label}
+                                </CardTitle>
+                                <stat.icon className="text-muted-foreground h-4 w-4" />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold">{stat.value}</div>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+
+                {/* Account Settings Placeholder */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Account Settings</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-sm text-muted-foreground">
+                            Preferences and account management features will be available soon.
+                        </p>
+                    </CardContent>
+                </Card>
+            </motion.div>
+        </div>
+    )
+}
