@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Mic, MicOff, Video, VideoOff } from "lucide-react"
+import { Mic, MicOff, Video, VideoOff, Settings } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { MediaDeviceSelector } from "@/components/media-device-selector"
+import { useMediaStore } from "@/store/media-store"
 import Link from "next/link"
 import { motion } from "framer-motion"
 
@@ -11,16 +14,25 @@ export default function LobbyPage() {
     const [hasMedia, setHasMedia] = useState(false)
     const [isMicOn, setIsMicOn] = useState(true)
     const [isVideoOn, setIsVideoOn] = useState(true)
+    const { videoDeviceId, audioDeviceId } = useMediaStore()
 
     useEffect(() => {
         let stream: MediaStream | null = null;
 
         async function getMedia() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: true,
-                })
+                // Stop existing tracks first
+                if (videoRef.current && videoRef.current.srcObject) {
+                    const oldStream = videoRef.current.srcObject as MediaStream;
+                    oldStream.getTracks().forEach(track => track.stop());
+                }
+
+                const constraints = {
+                    video: videoDeviceId ? { deviceId: { exact: videoDeviceId } } : true,
+                    audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true,
+                }
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints)
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream
                     setHasMedia(true)
@@ -37,7 +49,7 @@ export default function LobbyPage() {
                 stream.getTracks().forEach(track => track.stop());
             }
         }
-    }, [])
+    }, [videoDeviceId, audioDeviceId])
 
     const toggleMic = () => {
         setIsMicOn(!isMicOn)
@@ -77,6 +89,23 @@ export default function LobbyPage() {
                             <div className="h-20 w-20 rounded-full bg-muted/20 backdrop-blur-sm" />
                         </div>
                     )}
+
+                    {/* Settings Button */}
+                    <div className="absolute top-4 right-4 z-10">
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full bg-black/50 backdrop-blur-md hover:bg-black/70">
+                                    <Settings className="h-4 w-4 text-white" />
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Media Settings</DialogTitle>
+                                </DialogHeader>
+                                <MediaDeviceSelector />
+                            </DialogContent>
+                        </Dialog>
+                    </div>
 
                     {/* Overlay UI */}
                     <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-4">
