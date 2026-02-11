@@ -5,78 +5,91 @@ import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { ShieldCheck, Zap, Globe } from "lucide-react"
 
+import { LiveDemo } from "@/components/marketing/live-demo"
+
+import { Manifesto } from "@/components/marketing/manifesto"
+import { FeatureScroll } from "@/components/marketing/feature-scroll"
+
 export default function Home() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1">
-        <section className="relative flex min-h-[80vh] flex-col items-center justify-center overflow-hidden border-b bg-background px-4 text-center md:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-500/20 via-background to-background opacity-50" />
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="relative z-10 max-w-4xl space-y-6"
-          >
-            <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl lg:text-8xl">
-              The Connective Layer for <br />
-              <span className="bg-gradient-to-b from-foreground to-muted-foreground bg-clip-text text-transparent">
-                University Students
-              </span>
-            </h1>
-            <p className="mx-auto max-w-2xl text-lg text-muted-foreground sm:text-xl">
-              Experience the spontaneity of meeting new people, exclusively with your verified peers. No bots, no strangers, just students.
-            </p>
-            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <Link href="/lobby">
-                <Button size="lg" className="h-12 w-full px-8 text-base sm:w-auto">
-                  Connect with .edu Email
-                </Button>
-              </Link>
-              <Button variant="outline" size="lg" className="h-12 w-full px-8 text-base sm:w-auto">
-                Learn how it works
-              </Button>
+        {/* Transformative Hero Section */}
+        <section className="relative overflow-hidden border-b bg-background pt-32 pb-16 md:pt-48 md:pb-32">
+          {/* Ambient Background */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-background to-background opacity-40" />
+
+          <div className="container relative z-10 px-4 md:px-8">
+            <div className="grid gap-12 lg:grid-cols-2 lg:gap-8 items-center">
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.6 }}
+                className="max-w-2xl text-center lg:text-left"
+              >
+                <div className="inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20 mb-6">
+                  <span className="flex h-2 w-2 rounded-full bg-primary mr-2 animate-pulse"></span>
+                  Now live at 50+ Universities
+                </div>
+                <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl">
+                  The Connective Layer for <br />
+                  <span className="bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                    University Students
+                  </span>
+                </h1>
+                <p className="mt-6 text-lg text-muted-foreground sm:text-xl leading-relaxed">
+                  Experience the spontaneity of meeting new people, exclusively with your verified peers. No bots, no strangers, just students.
+                </p>
+                <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row lg:justify-start">
+                  <Link href="/lobby">
+                    <Button size="lg" className="h-12 w-full px-8 text-base shadow-lg shadow-primary/25 sm:w-auto hover:scale-105 transition-transform">
+                      Connect with .edu Email
+                    </Button>
+                  </Link>
+                  <Button variant="outline" size="lg" className="h-12 w-full px-8 text-base sm:w-auto hover:bg-muted/50">
+                    See how it works
+                  </Button>
+                </div>
+              </motion.div>
+
+              {/* Dynamic Live Demo Component */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.6 }}
+                className="relative hidden lg:block"
+              >
+                <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-primary to-purple-600 opacity-20 blur-xl" />
+                <LiveDemo />
+              </motion.div>
             </div>
-          </motion.div>
+          </div>
         </section>
 
-        <section className="container grid items-center justify-center gap-8 py-24 md:grid-cols-3 md:py-32">
-          <motion.div
-            whileHover={{ y: -5 }}
-            className="flex flex-col items-center space-y-4 rounded-lg border bg-card p-6 text-center shadow-sm"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <ShieldCheck className="h-6 w-6 text-primary" />
+        {/* Social Proof Ticker */}
+        <section className="border-b bg-muted/20 py-10">
+          <div className="container px-4 text-center md:px-8">
+            <p className="mb-6 text-sm font-semibold text-muted-foreground uppercase tracking-wider">Trusted by students at</p>
+            <div className="overflow-hidden">
+              <div className="flex animate-marquee gap-16 whitespace-nowrap opacity-50 grayscale transition-all hover:grayscale-0">
+                {["Harvard", "MIT", "Stanford", "Berkeley", "UCLA", "Columbia", "Yale", "Princeton", "Cornell", "UPenn", "NYU", "USC"].map((uni) => (
+                  <span key={uni} className="text-xl font-bold">{uni}</span>
+                ))}
+                {["Harvard", "MIT", "Stanford", "Berkeley", "UCLA", "Columbia", "Yale", "Princeton", "Cornell", "UPenn", "NYU", "USC"].map((uni) => (
+                  <span key={uni + "-dup"} className="text-xl font-bold">{uni}</span>
+                ))}
+              </div>
             </div>
-            <h3 className="text-xl font-bold">Verified Students Only</h3>
-            <p className="text-muted-foreground">
-              Strict .edu email verification ensures you only connect with real students from your university network.
-            </p>
-          </motion.div>
-          <motion.div
-            whileHover={{ y: -5 }}
-            className="flex flex-col items-center space-y-4 rounded-lg border bg-card p-6 text-center shadow-sm"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <Zap className="h-6 w-6 text-primary" />
-            </div>
-            <h3 className="text-xl font-bold">Lightning Fast Video</h3>
-            <p className="text-muted-foreground">
-              Powered by WebRTC for ultra-low latency. Skip matching queues and get into conversations instantly.
-            </p>
-          </motion.div>
-          <motion.div
-            whileHover={{ y: -5 }}
-            className="flex flex-col items-center space-y-4 rounded-lg border bg-card p-6 text-center shadow-sm"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <Globe className="h-6 w-6 text-primary" />
-            </div>
-            <h3 className="text-xl font-bold">Campus to Campus</h3>
-            <p className="text-muted-foreground">
-              Expand your network beyond your dorm. Connect with students from other top universities.
-            </p>
-          </motion.div>
+          </div>
         </section>
+
+        {/* Manifesto Section */}
+        <Manifesto />
+
+        {/* Feature Scroll Section */}
+        <FeatureScroll />
+
+
       </main>
     </div>
   )
