@@ -8,20 +8,24 @@ import { MediaDeviceSelector } from "@/components/media-device-selector"
 import { useMediaStore } from "@/store/media-store"
 import Link from "next/link"
 import { motion } from "framer-motion"
+import { Client } from "@stomp/stompjs" // NEW: Import STOMP client
 
 export default function LobbyPage() {
     const videoRef = useRef<HTMLVideoElement>(null)
-    const [hasMedia, setHasMedia] = useState(false)
+    const stompClient = useRef<Client | null>(null) // NEW: Reference to the socket connection
+    const [status, setStatus] = useState("Initializing camera...")
+
+    // Media State
     const [isMicOn, setIsMicOn] = useState(true)
     const [isVideoOn, setIsVideoOn] = useState(true)
     const { videoDeviceId, audioDeviceId } = useMediaStore()
 
+    // 1. Handle Media Stream (Camera/Mic)
     useEffect(() => {
         let stream: MediaStream | null = null;
 
         async function getMedia() {
             try {
-                // Stop existing tracks first
                 if (videoRef.current && videoRef.current.srcObject) {
                     const oldStream = videoRef.current.srcObject as MediaStream;
                     oldStream.getTracks().forEach(track => track.stop());
@@ -35,21 +39,51 @@ export default function LobbyPage() {
                 stream = await navigator.mediaDevices.getUserMedia(constraints)
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream
-                    setHasMedia(true)
                 }
+                setStatus("Connecting to server...") // Update status after camera is ready
             } catch (err) {
                 console.error("Error accessing media devices.", err)
-                setHasMedia(false)
+                setStatus("Camera Error. Please check permissions.")
             }
         }
         getMedia()
 
         return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
+            if (stream) stream.getTracks().forEach(track => track.stop());
         }
     }, [videoDeviceId, audioDeviceId])
+
+    // 2. Handle WebSocket Connection (The Backend Link)
+    useEffect(() => {
+        // Initialize the STOMP Client
+        const client = new Client({
+            brokerURL: 'ws://localhost:8080/ws', // Connect to your Spring Boot Server
+            onConnect: () => {
+                console.log("Connected to uKnight Backend!")
+                setStatus("Searching for verified students...")
+
+                // Send a message to the backend controller
+                client.publish({
+                    destination: '/app/join',
+                    body: "University of Central Florida" // In real app, send JSON with user ID
+                });
+            },
+            onDisconnect: () => {
+                setStatus("Disconnected. Retrying...")
+            },
+            onWebSocketError: (error) => {
+                console.error('Error with websocket', error);
+                setStatus("Connection Failed")
+            },
+        });
+
+        client.activate(); // Start the connection
+        stompClient.current = client;
+
+        return () => {
+            client.deactivate(); // Clean up when user leaves the page
+        }
+    }, [])
 
     const toggleMic = () => {
         setIsMicOn(!isMicOn)
@@ -135,7 +169,8 @@ export default function LobbyPage() {
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
                             <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500"></span>
                         </span>
-                        <span className="font-medium">Searching for verified students...</span>
+                        {/* DYNAMIC STATUS HERE */}
+                        <span className="font-medium">{status}</span>
                     </div>
                     <p className="text-sm text-muted-foreground">
                         Est. wait time: <span className="text-foreground font-medium">Instant</span>
