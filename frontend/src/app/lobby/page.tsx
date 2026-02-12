@@ -2,33 +2,48 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Mic, MicOff, Video, VideoOff, Settings } from "lucide-react"
+import { Mic, MicOff, Video, VideoOff, Settings, Users } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { MediaDeviceSelector } from "@/components/media-device-selector"
 import { useMediaStore } from "@/store/media-store"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { Client } from "@stomp/stompjs" // NEW: Import STOMP client
+import { Client, IMessage } from "@stomp/stompjs"
 
 export default function LobbyPage() {
     const videoRef = useRef<HTMLVideoElement>(null)
-    const stompClient = useRef<Client | null>(null) // NEW: Reference to the socket connection
+    const remoteVideoRef = useRef<HTMLVideoElement>(null)
+    const stompClient = useRef<Client | null>(null)
+    const peerConnection = useRef<RTCPeerConnection | null>(null)
+    const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([])
+    const subscriptionMatch = useRef<any>(null)
+    const subscriptionSignal = useRef<any>(null)
+
+    // IMPORTANT: Persist UUID across renders so sendSignal can use it
+    const myUuid = useRef<string>(crypto.randomUUID())
+
+    const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+
     const [status, setStatus] = useState("Initializing camera...")
+    const [logs, setLogs] = useState<string[]>([])
 
     // Media State
     const [isMicOn, setIsMicOn] = useState(true)
     const [isVideoOn, setIsVideoOn] = useState(true)
     const { videoDeviceId, audioDeviceId } = useMediaStore()
 
-    // 1. Handle Media Stream (Camera/Mic)
+    const log = (msg: string) => {
+        console.log(msg)
+        setLogs(prev => [...prev.slice(-4), msg])
+    }
+
+    // 1. Handle Media Stream
     useEffect(() => {
         let stream: MediaStream | null = null;
-
         async function getMedia() {
             try {
-                if (videoRef.current && videoRef.current.srcObject) {
-                    const oldStream = videoRef.current.srcObject as MediaStream;
-                    oldStream.getTracks().forEach(track => track.stop());
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
                 }
 
                 const constraints = {
@@ -37,10 +52,12 @@ export default function LobbyPage() {
                 }
 
                 stream = await navigator.mediaDevices.getUserMedia(constraints)
+                setLocalStream(stream);
+
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream
                 }
-                setStatus("Connecting to server...") // Update status after camera is ready
+                setStatus("Camera Ready. Connecting to server...")
             } catch (err) {
                 console.error("Error accessing media devices.", err)
                 setStatus("Camera Error. Please check permissions.")
@@ -53,51 +70,216 @@ export default function LobbyPage() {
         }
     }, [videoDeviceId, audioDeviceId])
 
-    // 2. Handle WebSocket Connection (The Backend Link)
+    // 2. WebRTC & STOMP Logic
     useEffect(() => {
-        // Initialize the STOMP Client
+        if (!localStream) return;
+
+        // Use the persistent UUID
+        const uuid = myUuid.current;
+
         const client = new Client({
-            brokerURL: 'ws://localhost:8080/ws', // Connect to your Spring Boot Server
+            brokerURL: 'ws://localhost:8080/ws',
+            reconnectDelay: 5000,
+            debug: (str) => console.log(str),
             onConnect: () => {
-                console.log("Connected to uKnight Backend!")
+                log("Connected to Backend! UUID: " + uuid.substring(0, 5))
                 setStatus("Searching for verified students...")
 
-                // Send a message to the backend controller
+                // Subscribe to match events
+                subscriptionMatch.current = client.subscribe(`/topic/match/${uuid}`, (message: IMessage) => {
+                    const data = JSON.parse(message.body)
+                    handleMatchFound(data, localStream)
+                })
+
+                // Subscribe to signal events
+                subscriptionSignal.current = client.subscribe(`/topic/signal/${uuid}`, (message: IMessage) => {
+                    const data = JSON.parse(message.body)
+                    handleSignal(data)
+                })
+
+                // Join the lobby
                 client.publish({
                     destination: '/app/join',
-                    body: "University of Central Florida" // In real app, send JSON with user ID
-                });
+                    headers: { 'uuid': uuid },
+                    body: "University of Central Florida"
+                })
+            },
+            onStompError: (frame) => {
+                log('Broker Error: ' + frame.headers['message'])
             },
             onDisconnect: () => {
                 setStatus("Disconnected. Retrying...")
-            },
-            onWebSocketError: (error) => {
-                console.error('Error with websocket', error);
-                setStatus("Connection Failed")
-            },
+            }
         });
 
-        client.activate(); // Start the connection
+        client.activate();
         stompClient.current = client;
 
         return () => {
-            client.deactivate(); // Clean up when user leaves the page
+            if (peerConnection.current) peerConnection.current.close();
+            client.deactivate();
         }
-    }, [])
+    }, [localStream])
+
+    const handleMatchFound = async (data: { peerId: string, initiator: boolean }, stream: MediaStream) => {
+        log(`Match found! Partner: ${data.peerId.substring(0, 5)}... Initiator: ${data.initiator}`)
+        setStatus(data.initiator ? "Initiating Call..." : "Waiting for Call...")
+
+        createPeerConnection(data.peerId, stream);
+
+        if (data.initiator) {
+            try {
+                const offer = await peerConnection.current?.createOffer();
+                await peerConnection.current?.setLocalDescription(offer);
+                sendSignal({ type: 'OFFER', sdp: JSON.stringify(offer), targetPeerId: data.peerId });
+            } catch (err) {
+                console.error("Error creating offer:", err);
+            }
+        }
+    }
+
+    const processIceQueue = async () => {
+        const pc = peerConnection.current;
+        if (!pc || !pc.remoteDescription) return;
+
+        while (iceCandidatesQueue.current.length > 0) {
+            const candidate = iceCandidatesQueue.current.shift();
+            if (candidate) {
+                try {
+                    await pc.addIceCandidate(candidate);
+                    log("Added buffered ICE candidate");
+                } catch (e) {
+                    console.error("Error adding buffered ICE candidate", e);
+                }
+            }
+        }
+    }
+
+    const handleSignal = async (data: any) => {
+        const pc = peerConnection.current;
+        if (!pc) {
+            // If we receive a signal but don't have a PC, it implies we are the receiver and MATCH_FOUND hasn't triggered PC creation yet 
+            // (unlikely given subscription order) OR this is a stray signal.
+            // But wait, handleMatchFound creates the PC.
+            // If we are here, PC should exist.
+            log("Data received but PC is null. Ignore if early ICE.")
+            return;
+        }
+
+        try {
+            if (data.type === 'OFFER') {
+                log("Received OFFER from " + data.senderId.substring(0, 5))
+                const offer = JSON.parse(data.sdp);
+                await pc.setRemoteDescription(offer);
+
+                await processIceQueue();
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                // IMPORTANT: Send back to the SENDER of the offer
+                sendSignal({ type: 'ANSWER', sdp: JSON.stringify(answer), targetPeerId: data.senderId });
+                setStatus("Connected! Sending Answer...")
+
+            } else if (data.type === 'ANSWER') {
+                log("Received ANSWER")
+                const answer = JSON.parse(data.sdp);
+                await pc.setRemoteDescription(answer);
+                await processIceQueue();
+                setStatus("Bi-Directional Connection!")
+
+            } else if (data.type === 'ICE') {
+                if (data.candidate) {
+                    // log("Received ICE Candidate")
+                    const candidate = JSON.parse(data.candidate);
+                    if (pc.remoteDescription) {
+                        try {
+                            await pc.addIceCandidate(candidate);
+                        } catch (e) {
+                            console.error("Error adding ICE candidate", e);
+                        }
+                    } else {
+                        iceCandidatesQueue.current.push(candidate);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error handling signal:", error);
+            log("Signal Error: " + error);
+        }
+    }
+
+    const createPeerConnection = (targetPeerId: string, stream: MediaStream) => {
+        if (peerConnection.current) {
+            peerConnection.current.close();
+        }
+
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        });
+
+        stream.getTracks().forEach(track => {
+            pc.addTrack(track, stream);
+        });
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                sendSignal({
+                    type: 'ICE',
+                    candidate: JSON.stringify(event.candidate),
+                    targetPeerId: targetPeerId
+                });
+            }
+        };
+
+        pc.ontrack = (event) => {
+            log(`Received remote track: ${event.track.kind}`)
+            if (remoteVideoRef.current) {
+                if (remoteVideoRef.current.srcObject !== event.streams[0]) {
+                    remoteVideoRef.current.srcObject = event.streams[0];
+                }
+            }
+        };
+
+        pc.onconnectionstatechange = () => {
+            log(`Connection State: ${pc.connectionState}`)
+            if (pc.connectionState === 'connected') {
+                setStatus("Secured Connection Established")
+            } else if (pc.connectionState === 'disconnected') {
+                setStatus("Partner Disconnected")
+                remoteVideoRef.current!.srcObject = null;
+            } else if (pc.connectionState === 'failed') {
+                setStatus("Connection Failed. Retrying...")
+            }
+        };
+
+        peerConnection.current = pc;
+    }
+
+    const sendSignal = (payload: any) => {
+        if (stompClient.current && stompClient.current.connected) {
+            // CRITICAL FIX: Include UUID in headers so backend knows who sent it
+            stompClient.current.publish({
+                destination: '/app/signal',
+                headers: { 'uuid': myUuid.current },
+                body: JSON.stringify(payload)
+            });
+        }
+    }
 
     const toggleMic = () => {
         setIsMicOn(!isMicOn)
-        if (videoRef.current && videoRef.current.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getAudioTracks().forEach(track => track.enabled = !isMicOn);
+        if (localStream) {
+            localStream.getAudioTracks().forEach(t => t.enabled = !isMicOn);
         }
     }
 
     const toggleVideo = () => {
         setIsVideoOn(!isVideoOn)
-        if (videoRef.current && videoRef.current.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getVideoTracks().forEach(track => track.enabled = !isVideoOn);
+        if (localStream) {
+            localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOn);
         }
     }
 
@@ -106,10 +288,10 @@ export default function LobbyPage() {
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="relative w-full max-w-lg overflow-hidden rounded-xl bg-card shadow-2xl ring-1 ring-border"
+                className="relative w-full max-w-4xl overflow-hidden rounded-xl bg-card shadow-2xl ring-1 ring-border grid grid-cols-1 md:grid-cols-2"
             >
-                {/* Video Preview */}
-                <div className="relative aspect-video bg-black/90">
+                {/* Local Video */}
+                <div className="relative aspect-video bg-black/90 border-r border-white/10">
                     <video
                         ref={videoRef}
                         autoPlay
@@ -118,18 +300,53 @@ export default function LobbyPage() {
                         className={`h-full w-full object-cover ${!isVideoOn ? "hidden" : ""}`}
                         style={{ transform: "scaleX(-1)" }}
                     />
-                    {!isVideoOn && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="h-20 w-20 rounded-full bg-muted/20 backdrop-blur-sm" />
+                    <div className="absolute top-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">You</div>
+                </div>
+
+                {/* Remote Video */}
+                <div className="relative aspect-video bg-black/90">
+                    <video
+                        ref={remoteVideoRef}
+                        autoPlay
+                        playsInline
+                        className="h-full w-full object-cover"
+                    />
+                    <div className="absolute top-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">Partner</div>
+
+                    {/* Placeholder when no partner */}
+                    {status !== "Secured Connection Established" && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                            <div className="text-center">
+                                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-2 animate-pulse" />
+                                <p className="text-white text-sm">{status}</p>
+                            </div>
                         </div>
                     )}
+                </div>
 
-                    {/* Settings Button */}
-                    <div className="absolute top-4 right-4 z-10">
+                {/* Controls & Status (Spanning both) */}
+                <div className="col-span-1 md:col-span-2 p-6 bg-card border-t border-border flex flex-col items-center gap-4">
+                    <div className="flex gap-4">
+                        <Button
+                            variant={isMicOn ? "secondary" : "destructive"}
+                            size="icon"
+                            className="h-12 w-12 rounded-full"
+                            onClick={toggleMic}
+                        >
+                            {isMicOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+                        </Button>
+                        <Button
+                            variant={isVideoOn ? "secondary" : "destructive"}
+                            size="icon"
+                            className="h-12 w-12 rounded-full"
+                            onClick={toggleVideo}
+                        >
+                            {isVideoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                        </Button>
                         <Dialog>
                             <DialogTrigger asChild>
-                                <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full bg-black/50 backdrop-blur-md hover:bg-black/70">
-                                    <Settings className="h-4 w-4 text-white" />
+                                <Button variant="secondary" size="icon" className="h-12 w-12 rounded-full">
+                                    <Settings className="h-5 w-5" />
                                 </Button>
                             </DialogTrigger>
                             <DialogContent>
@@ -141,45 +358,8 @@ export default function LobbyPage() {
                         </Dialog>
                     </div>
 
-                    {/* Overlay UI */}
-                    <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-4">
-                        <Button
-                            variant={isMicOn ? "secondary" : "destructive"}
-                            size="icon"
-                            className="h-12 w-12 rounded-full backdrop-blur-md transition-all hover:scale-105"
-                            onClick={toggleMic}
-                        >
-                            {isMicOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-                        </Button>
-                        <Button
-                            variant={isVideoOn ? "secondary" : "destructive"}
-                            size="icon"
-                            className="h-12 w-12 rounded-full backdrop-blur-md transition-all hover:scale-105"
-                            onClick={toggleVideo}
-                        >
-                            {isVideoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Status Section */}
-                <div className="flex flex-col items-center gap-4 bg-card p-8 text-center">
-                    <div className="flex items-center gap-2">
-                        <span className="relative flex h-3 w-3">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-                            <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500"></span>
-                        </span>
-                        {/* DYNAMIC STATUS HERE */}
-                        <span className="font-medium">{status}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                        Est. wait time: <span className="text-foreground font-medium">Instant</span>
-                    </p>
-
                     <Link href="/">
-                        <Button variant="ghost" className="text-muted-foreground hover:text-foreground">
-                            Cancel
-                        </Button>
+                        <Button variant="ghost">Leave Lobby</Button>
                     </Link>
                 </div>
 

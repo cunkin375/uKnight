@@ -45,11 +45,12 @@ This directory contains the Spring Boot backend for the uKnight application. It 
     -   `LobbyController.java`: WebSocket message handlers.
 
 ## Running the Backend
-
-To run the application, use the provided Maven wrapper:
-
-```bash
-./mvnw spring-boot:run
-```
-
-The server will start
+ 
+ To run the application, verify you are in the `backend/server` directory and use the provided Maven wrapper:
+ 
+ ```bash
+ cd backend/server
+ ./mvnw spring-boot:run
+ ```
+ 
+ The server will start on port 8080.
