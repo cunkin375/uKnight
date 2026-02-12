@@ -2,13 +2,20 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Mic, MicOff, Video, VideoOff, Settings, Users } from "lucide-react"
+import { Mic, MicOff, Video, VideoOff, Settings, Users, Send, MessageSquare, X, SkipForward } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { MediaDeviceSelector } from "@/components/media-device-selector"
 import { useMediaStore } from "@/store/media-store"
 import Link from "next/link"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { Client, IMessage } from "@stomp/stompjs"
+import { Input } from "@/components/ui/input"
+
+type ChatMessage = {
+    id: string; // Unique ID for keys
+    sender: 'me' | 'partner';
+    text: string;
+}
 
 export default function LobbyPage() {
     const videoRef = useRef<HTMLVideoElement>(null)
@@ -16,15 +23,24 @@ export default function LobbyPage() {
     const stompClient = useRef<Client | null>(null)
     const peerConnection = useRef<RTCPeerConnection | null>(null)
     const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([])
+
+    // Subscriptions
     const subscriptionMatch = useRef<any>(null)
     const subscriptionSignal = useRef<any>(null)
+    const subscriptionChat = useRef<any>(null)
 
     // IMPORTANT: Persist UUID across renders so sendSignal can use it
     const myUuid = useRef<string>(crypto.randomUUID())
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+    const [currentPeerId, setCurrentPeerId] = useState<string | null>(null)
 
     const [status, setStatus] = useState("Initializing camera...")
+
+    // Chat State
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+    const [chatInput, setChatInput] = useState("")
+    const [isChatOpen, setIsChatOpen] = useState(false)
 
     // Media State
     const [isMicOn, setIsMicOn] = useState(true)
@@ -72,7 +88,6 @@ export default function LobbyPage() {
     useEffect(() => {
         if (!localStream) return;
 
-        // Use the persistent UUID
         const uuid = myUuid.current;
 
         const client = new Client({
@@ -83,17 +98,7 @@ export default function LobbyPage() {
                 log("Connected to Backend! UUID: " + uuid.substring(0, 5))
                 setStatus("Searching for verified students...")
 
-                // Subscribe to match events
-                subscriptionMatch.current = client.subscribe(`/topic/match/${uuid}`, (message: IMessage) => {
-                    const data = JSON.parse(message.body)
-                    handleMatchFound(data, localStream)
-                })
-
-                // Subscribe to signal events
-                subscriptionSignal.current = client.subscribe(`/topic/signal/${uuid}`, (message: IMessage) => {
-                    const data = JSON.parse(message.body)
-                    handleSignal(data)
-                })
+                subscribeToTopics(client, uuid);
 
                 // Join the lobby
                 client.publish({
@@ -119,9 +124,35 @@ export default function LobbyPage() {
         }
     }, [localStream])
 
+    const subscribeToTopics = (client: Client, uuid: string) => {
+        // Subscribe to match events
+        subscriptionMatch.current = client.subscribe(`/topic/match/${uuid}`, (message: IMessage) => {
+            const data = JSON.parse(message.body)
+            handleMatchFound(data, localStream!)
+        })
+
+        // Subscribe to signal events
+        subscriptionSignal.current = client.subscribe(`/topic/signal/${uuid}`, (message: IMessage) => {
+            const data = JSON.parse(message.body)
+            handleSignal(data)
+        })
+
+        // Subscribe to chat events
+        subscriptionChat.current = client.subscribe(`/topic/chat/${uuid}`, (message: IMessage) => {
+            const data = JSON.parse(message.body);
+            setChatMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'partner', text: data.message }]);
+            if (!isChatOpen) {
+                setIsChatOpen(true);
+            }
+        })
+    }
+
     const handleMatchFound = async (data: { peerId: string, initiator: boolean }, stream: MediaStream) => {
         log(`Match found! Partner: ${data.peerId.substring(0, 5)}... Initiator: ${data.initiator}`)
-        setStatus(data.initiator ? "Initiating Call..." : "Waiting for Call...")
+        setStatus("Connected!")
+        setCurrentPeerId(data.peerId);
+        setChatMessages([]); // Clear chat for new match
+        setIsChatOpen(false); // Close chat on new match
 
         createPeerConnection(data.peerId, stream);
 
@@ -145,7 +176,6 @@ export default function LobbyPage() {
             if (candidate) {
                 try {
                     await pc.addIceCandidate(candidate);
-                    log("Added buffered ICE candidate");
                 } catch (e) {
                     console.error("Error adding buffered ICE candidate", e);
                 }
@@ -155,41 +185,43 @@ export default function LobbyPage() {
 
     const handleSignal = async (data: any) => {
         const pc = peerConnection.current;
-        if (!pc) {
-            // If we receive a signal but don't have a PC, it implies we are the receiver and MATCH_FOUND hasn't triggered PC creation yet 
-            // (unlikely given subscription order) OR this is a stray signal.
-            // But wait, handleMatchFound creates the PC.
-            // If we are here, PC should exist.
-            log("Data received but PC is null. Ignore if early ICE.")
+
+        // Handle SKIP signal (BYE)
+        if (data.type === 'BYE') {
+            log("Partner skipped.");
+            handlePartnerDisconnect();
             return;
         }
 
+        if (!pc || pc.signalingState === 'closed') return;
+
         try {
             if (data.type === 'OFFER') {
-                log("Received OFFER from " + data.senderId.substring(0, 5))
+                log("Received OFFER")
+                if (!currentPeerId) setCurrentPeerId(data.senderId);
+
                 const offer = JSON.parse(data.sdp);
+                if (pc.signalingState === 'closed') return;
                 await pc.setRemoteDescription(offer);
 
                 await processIceQueue();
 
+                if (pc.signalingState === 'closed') return;
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                // IMPORTANT: Send back to the SENDER of the offer
                 sendSignal({ type: 'ANSWER', sdp: JSON.stringify(answer), targetPeerId: data.senderId });
-                setStatus("Connected! Sending Answer...")
 
             } else if (data.type === 'ANSWER') {
                 log("Received ANSWER")
                 const answer = JSON.parse(data.sdp);
+                if (pc.signalingState === 'closed') return;
                 await pc.setRemoteDescription(answer);
                 await processIceQueue();
-                setStatus("Bi-Directional Connection!")
 
             } else if (data.type === 'ICE') {
                 if (data.candidate) {
-                    // log("Received ICE Candidate")
                     const candidate = JSON.parse(data.candidate);
-                    if (pc.remoteDescription) {
+                    if (pc.remoteDescription && pc.signalingState !== 'closed') {
                         try {
                             await pc.addIceCandidate(candidate);
                         } catch (e) {
@@ -202,7 +234,6 @@ export default function LobbyPage() {
             }
         } catch (error) {
             console.error("Error handling signal:", error);
-            log("Signal Error: " + error);
         }
     }
 
@@ -233,7 +264,6 @@ export default function LobbyPage() {
         };
 
         pc.ontrack = (event) => {
-            log(`Received remote track: ${event.track.kind}`)
             if (remoteVideoRef.current) {
                 if (remoteVideoRef.current.srcObject !== event.streams[0]) {
                     remoteVideoRef.current.srcObject = event.streams[0];
@@ -243,13 +273,8 @@ export default function LobbyPage() {
 
         pc.onconnectionstatechange = () => {
             log(`Connection State: ${pc.connectionState}`)
-            if (pc.connectionState === 'connected') {
-                setStatus("Secured Connection Established")
-            } else if (pc.connectionState === 'disconnected') {
-                setStatus("Partner Disconnected")
-                remoteVideoRef.current!.srcObject = null;
-            } else if (pc.connectionState === 'failed') {
-                setStatus("Connection Failed. Retrying...")
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                // If partner acts weird, we can handle it here, but generally 'BYE' is cleaner for skips
             }
         };
 
@@ -258,11 +283,62 @@ export default function LobbyPage() {
 
     const sendSignal = (payload: any) => {
         if (stompClient.current && stompClient.current.connected) {
-            // CRITICAL FIX: Include UUID in headers so backend knows who sent it
             stompClient.current.publish({
                 destination: '/app/signal',
                 headers: { 'uuid': myUuid.current },
                 body: JSON.stringify(payload)
+            });
+        }
+    }
+
+    // --- Chat Logic ---
+    const sendChat = () => {
+        if (!chatInput.trim() || !currentPeerId || !stompClient.current?.connected) return;
+
+        const message = chatInput.trim();
+        setChatMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'me', text: message }]);
+        setChatInput("");
+
+        stompClient.current.publish({
+            destination: '/app/chat',
+            headers: { 'uuid': myUuid.current },
+            body: JSON.stringify({ targetPeerId: currentPeerId, message: message })
+        });
+    }
+
+    // --- Skip Logic ---
+    const handleNext = () => {
+        if (currentPeerId) {
+            sendSignal({ type: 'BYE', targetPeerId: currentPeerId });
+        }
+        cleanupAndRejoin();
+    }
+
+    const handlePartnerDisconnect = () => {
+        cleanupAndRejoin();
+    }
+
+    const cleanupAndRejoin = () => {
+        setStatus("Searching for verified students...");
+        setCurrentPeerId(null);
+        setChatMessages([]);
+        setIsChatOpen(false);
+        if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = null;
+            remoteVideoRef.current.load(); // Force reload to clear frame
+        }
+
+        if (peerConnection.current) {
+            peerConnection.current.close();
+            peerConnection.current = null;
+        }
+
+        // Re-join lobby
+        if (stompClient.current && stompClient.current.connected) {
+            stompClient.current.publish({
+                destination: '/app/join',
+                headers: { 'uuid': myUuid.current },
+                body: "University of Central Florida"
             });
         }
     }
@@ -281,87 +357,176 @@ export default function LobbyPage() {
         }
     }
 
+    // --- UI Variants ---
+    const glassButton = "bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/20 text-white shadow-lg transition-all"
+
     return (
-        <div className="flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center p-4">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="relative w-full max-w-4xl overflow-hidden rounded-xl bg-card shadow-2xl ring-1 ring-border grid grid-cols-1 md:grid-cols-2"
-            >
-                {/* Local Video */}
-                <div className="relative aspect-video bg-black/90 border-r border-white/10">
-                    <video
-                        ref={videoRef}
-                        autoPlay
-                        muted
-                        playsInline
-                        className={`h-full w-full object-cover ${!isVideoOn ? "hidden" : ""}`}
-                        style={{ transform: "scaleX(-1)" }}
-                    />
-                    <div className="absolute top-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">You</div>
-                </div>
+        <div className="relative h-screen w-full bg-black overflow-hidden flex items-center justify-center">
 
-                {/* Remote Video */}
-                <div className="relative aspect-video bg-black/90">
-                    <video
-                        ref={remoteVideoRef}
-                        autoPlay
-                        playsInline
-                        className="h-full w-full object-cover"
-                    />
-                    <div className="absolute top-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">Partner</div>
-
-                    {/* Placeholder when no partner */}
-                    {status !== "Secured Connection Established" && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                            <div className="text-center">
-                                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-2 animate-pulse" />
-                                <p className="text-white text-sm">{status}</p>
+            {/* Remote Video (Full Screen) */}
+            <div className="absolute inset-0">
+                <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    className="h-full w-full object-cover"
+                />
+                {/* Status Overlay */}
+                {!currentPeerId && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md z-10">
+                        <div className="text-center">
+                            <div className="relative">
+                                <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full animate-pulse"></div>
+                                <Users className="h-16 w-16 text-primary mx-auto mb-4 relative z-10" />
                             </div>
+                            <p className="text-white text-lg font-medium animate-pulse">{status}</p>
                         </div>
-                    )}
-                </div>
-
-                {/* Controls & Status (Spanning both) */}
-                <div className="col-span-1 md:col-span-2 p-6 bg-card border-t border-border flex flex-col items-center gap-4">
-                    <div className="flex gap-4">
-                        <Button
-                            variant={isMicOn ? "secondary" : "destructive"}
-                            size="icon"
-                            className="h-12 w-12 rounded-full"
-                            onClick={toggleMic}
-                        >
-                            {isMicOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-                        </Button>
-                        <Button
-                            variant={isVideoOn ? "secondary" : "destructive"}
-                            size="icon"
-                            className="h-12 w-12 rounded-full"
-                            onClick={toggleVideo}
-                        >
-                            {isVideoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-                        </Button>
-                        <Dialog>
-                            <DialogTrigger asChild>
-                                <Button variant="secondary" size="icon" className="h-12 w-12 rounded-full">
-                                    <Settings className="h-5 w-5" />
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Media Settings</DialogTitle>
-                                </DialogHeader>
-                                <MediaDeviceSelector />
-                            </DialogContent>
-                        </Dialog>
                     </div>
+                )}
+            </div>
 
-                    <Link href="/">
-                        <Button variant="ghost">Leave Lobby</Button>
-                    </Link>
-                </div>
-
+            {/* Local Video (Floating PIP) - Bottom Left per User Request */}
+            <motion.div
+                className="absolute bottom-4 left-4 w-32 md:w-48 aspect-video rounded-xl overflow-hidden shadow-2xl border border-white/20 z-20 bg-black/50 backdrop-blur-sm"
+                drag
+                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+            >
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className={`h-full w-full object-cover ${!isVideoOn ? "hidden" : ""}`}
+                    style={{ transform: "scaleX(-1)" }}
+                />
+                {!isVideoOn && (
+                    <div className="h-full w-full flex items-center justify-center text-white/50 text-xs">
+                        Video Off
+                    </div>
+                )}
             </motion.div>
+
+            {/* Controls Bar (Bottom Center) */}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 z-30">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-14 w-14 rounded-full ${glassButton} ${!isMicOn ? "bg-red-500/20 text-red-500 border-red-500/30 hover:bg-red-500/30" : ""}`}
+                    onClick={toggleMic}
+                >
+                    {isMicOn ? <Mic className="h-6 w-6" /> : <MicOff className="h-6 w-6" />}
+                </Button>
+
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-14 w-14 rounded-full ${glassButton} ${!isVideoOn ? "bg-red-500/20 text-red-500 border-red-500/30 hover:bg-red-500/30" : ""}`}
+                    onClick={toggleVideo}
+                >
+                    {isVideoOn ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
+                </Button>
+
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-14 w-14 rounded-full ${glassButton}`}
+                    onClick={() => setIsChatOpen(!isChatOpen)}
+                >
+                    <MessageSquare className="h-6 w-6" />
+                    {chatMessages.length > 0 && !isChatOpen && (
+                        <span className="absolute top-2 right-2 h-3 w-3 bg-red-500 rounded-full border border-black" />
+                    )}
+                </Button>
+
+                <Button
+                    className="h-14 px-8 rounded-full bg-white text-black hover:bg-white/90 font-medium shadow-xl shadow-white/10 transition-all active:scale-95"
+                    onClick={handleNext}
+                >
+                    <SkipForward className="h-5 w-5 mr-2" />
+                    Next
+                </Button>
+
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className={`h-12 w-12 rounded-full ${glassButton}`}>
+                            <Settings className="h-5 w-5" />
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Media Settings</DialogTitle>
+                        </DialogHeader>
+                        <MediaDeviceSelector />
+                    </DialogContent>
+                </Dialog>
+
+                <Link href="/">
+                    <Button variant="ghost" size="icon" className={`h-12 w-12 rounded-full ${glassButton} bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/20`}>
+                        <X className="h-5 w-5" />
+                    </Button>
+                </Link>
+            </div>
+
+            {/* Chat Overlay (Sidebar Slide-in) */}
+            <AnimatePresence>
+                {isChatOpen && (
+                    <motion.div
+                        initial={{ x: "100%", opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: "100%", opacity: 0 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        className="absolute top-0 right-0 h-full w-full md:w-96 bg-black/40 backdrop-blur-xl border-l border-white/10 z-40 flex flex-col shadow-2xl"
+                    >
+                        {/* Chat Header */}
+                        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-white font-medium">Chat</h3>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setIsChatOpen(false)}>
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+
+                        {/* Messages */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            {chatMessages.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-white/30 text-sm text-center px-6">
+                                    <MessageSquare className="h-8 w-8 mb-3 opacity-50" />
+                                    <p>Send a message...</p>
+                                </div>
+                            ) : (
+                                chatMessages.map((msg) => (
+                                    <div key={msg.id} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm backdrop-blur-md ${msg.sender === 'me'
+                                            ? 'bg-primary/20 text-primary-foreground border border-primary/20 rounded-tr-sm'
+                                            : 'bg-white/10 text-white border border-white/10 rounded-tl-sm'
+                                            }`}>
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Input */}
+                        <div className="p-4 border-t border-white/10 bg-black/20">
+                            <form
+                                onSubmit={(e) => { e.preventDefault(); sendChat(); }}
+                                className="flex gap-2"
+                            >
+                                <Input
+                                    placeholder="Type a message..."
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    disabled={!currentPeerId}
+                                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-primary/50"
+                                />
+                                <Button type="submit" size="icon" className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={!currentPeerId || !chatInput.trim()}>
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </form>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

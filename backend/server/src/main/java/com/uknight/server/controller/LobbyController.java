@@ -69,4 +69,25 @@ public class LobbyController {
             messagingTemplate.convertAndSend("/topic/signal/" + targetPeerId, signalPayload);
         }
     }
+    // Frontend sends to: /app/chat
+    // Payload should contain: { "targetPeerId": "...", "message": "..." }
+    @MessageMapping("/chat")
+    public void handleChat(@Payload Map<String, String> chatMessage, SimpMessageHeaderAccessor headerAccessor) {
+        String senderId = headerAccessor.getFirstNativeHeader("uuid");
+        if (senderId == null) {
+             senderId = headerAccessor.getSessionId();
+        }
+
+        String targetPeerId = chatMessage.get("targetPeerId");
+        String messageContent = chatMessage.get("message");
+
+        log.info("Chat message from {} to {}: {}", senderId, targetPeerId, messageContent);
+
+        if (targetPeerId != null && messageContent != null) {
+            // Forward the signal to the specific user
+            // We include 'senderId' so the receiver knows who sent it
+            Object payload = Map.of("senderId", senderId, "message", messageContent);
+            messagingTemplate.convertAndSend("/topic/chat/" + targetPeerId, payload);
+        }
+    }
 }

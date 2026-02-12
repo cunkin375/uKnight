@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
+import { FooterWrapper } from "@/components/footer-wrapper";
 import { AuthProvider } from "@/context/auth-context";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -42,7 +42,7 @@ export default function RootLayout({
             <Navbar />
             {children}
             <Toaster />
-            <Footer />
+            <FooterWrapper />
           </AuthProvider>
         </ThemeProvider>
       </body>
