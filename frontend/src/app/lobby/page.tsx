@@ -25,7 +25,6 @@ export default function LobbyPage() {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null)
 
     const [status, setStatus] = useState("Initializing camera...")
-    const [logs, setLogs] = useState<string[]>([])
 
     // Media State
     const [isMicOn, setIsMicOn] = useState(true)
@@ -34,7 +33,6 @@ export default function LobbyPage() {
 
     const log = (msg: string) => {
         console.log(msg)
-        setLogs(prev => [...prev.slice(-4), msg])
     }
 
     // 1. Handle Media Stream
