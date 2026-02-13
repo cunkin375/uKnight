@@ -3,13 +3,13 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyC3OKoilMyGSfrzATJOje9vjg4OFDlPnqc",
-    authDomain: "uknight-webcalling-prototype.firebaseapp.com",
-    projectId: "uknight-webcalling-prototype",
-    storageBucket: "uknight-webcalling-prototype.firebasestorage.app",
-    messagingSenderId: "183062696521",
-    appId: "1:183062696521:web:5b86d179fadb301a3fe598",
-    measurementId: "G-XBQL0R72NZ"
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();

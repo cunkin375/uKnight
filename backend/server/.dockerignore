@@ -1,0 +1,5 @@
+target
+*.jar
+.git
+.DS_Store
+build_log.txt

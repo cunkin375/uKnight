@@ -19,22 +19,24 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(AbstractHttpConfigurer::disable)
-            .cors(Customizer.withDefaults()) // 1. Enable CORS in Security
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/ws/**").permitAll() // Allow WebSocket handshake
-                .anyRequest().authenticated()
-            );
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(Customizer.withDefaults()) // 1. Enable CORS in Security
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/ws/**").permitAll() // Allow WebSocket handshake
+                        .anyRequest().authenticated());
 
         return http.build();
     }
+
+    @org.springframework.beans.factory.annotation.Value("${cors.allowed-origins:http://localhost:3000}")
+    private String allowedOrigins;
 
     // 2. Define the CORS configuration bean
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Allow your Next.js frontend (localhost:3000)
-        configuration.setAllowedOrigins(List.of("http://localhost:3000")); 
+        // Use the injected value, splitting by comma if multiple origins are needed
+        configuration.setAllowedOrigins(List.of(allowedOrigins.split(",")));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

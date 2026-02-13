@@ -200,7 +200,7 @@ export default function LobbyPage() {
                 log("Received OFFER")
                 if (!currentPeerId) setCurrentPeerId(data.senderId);
 
-                const offer = JSON.parse(data.sdp);
+                const offer = JSON.parse(data.sdp) as RTCSessionDescriptionInit;
                 if (pc.signalingState === 'closed') return;
                 await pc.setRemoteDescription(offer);
 
@@ -213,14 +213,14 @@ export default function LobbyPage() {
 
             } else if (data.type === 'ANSWER') {
                 log("Received ANSWER")
-                const answer = JSON.parse(data.sdp);
+                const answer = JSON.parse(data.sdp) as RTCSessionDescriptionInit;
                 if (pc.signalingState === 'closed') return;
                 await pc.setRemoteDescription(answer);
                 await processIceQueue();
 
             } else if (data.type === 'ICE') {
                 if (data.candidate) {
-                    const candidate = JSON.parse(data.candidate);
+                    const candidate = JSON.parse(data.candidate) as RTCIceCandidateInit;
                     if (pc.remoteDescription && pc.signalingState !== 'closed') {
                         try {
                             await pc.addIceCandidate(candidate);
