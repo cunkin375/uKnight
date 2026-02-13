@@ -91,7 +91,7 @@ export default function LobbyPage() {
         const uuid = myUuid.current;
 
         const client = new Client({
-            brokerURL: 'ws://localhost:8080/ws',
+            brokerURL: 'wss://uknight-backend-536429702801.us-central1.run.app/ws',
             reconnectDelay: 5000,
             debug: (str) => console.log(str),
             onConnect: () => {
