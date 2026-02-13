@@ -316,12 +316,35 @@ export default function LobbyPage() {
         pc.ontrack = (event) => {
             log("Track received: " + event.track.kind);
             if (remoteVideoRef.current) {
-                const remoteStream = event.streams[0] || new MediaStream([event.track]);
-                remoteVideoRef.current.srcObject = remoteStream;
-                try {
-                    remoteVideoRef.current.play();
-                } catch (e) {
-                    console.error("Autoplay blocked", e);
+                // Prevent resetting the stream if it's already the same one
+                // This fixes the "AbortError: The play() request was interrupted"
+                const existingStream = remoteVideoRef.current.srcObject as MediaStream;
+                if (event.streams && event.streams[0]) {
+                    if (existingStream !== event.streams[0]) {
+                        log("Assigning new remote stream to video element");
+                        remoteVideoRef.current.srcObject = event.streams[0];
+                    }
+                } else {
+                    // Fallback: If no stream comes with track, add to existing or create new
+                    if (!existingStream) {
+                        log("Creating fallback stream for track");
+                        const newStream = new MediaStream([event.track]);
+                        remoteVideoRef.current.srcObject = newStream;
+                    } else {
+                        log("Adding track to existing fallback stream");
+                        // Only add if not already present
+                        if (!existingStream.getTracks().some(t => t.id === event.track.id)) {
+                            existingStream.addTrack(event.track);
+                        }
+                    }
+                }
+
+                // Ensure it plays, but catch errors safely
+                if (remoteVideoRef.current.paused) {
+                    remoteVideoRef.current.play().catch(e => {
+                        // Ignore AbortError, it just means we tried to play too fast or double-played
+                        if (e.name !== 'AbortError') console.error("Autoplay error:", e);
+                    });
                 }
             }
         };
