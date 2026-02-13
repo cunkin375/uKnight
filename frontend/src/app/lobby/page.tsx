@@ -221,13 +221,17 @@ export default function LobbyPage() {
             } else if (data.type === 'ICE') {
                 if (data.candidate) {
                     const candidate = JSON.parse(data.candidate) as RTCIceCandidateInit;
+                    // FIX: If remote description isn't set yet, BUFFER IT.
+                    // Checking signalingState isn't enough; we need to check remoteDescription presence specifically.
                     if (pc.remoteDescription && pc.signalingState !== 'closed') {
                         try {
+                            log("Adding ICE candidate immediately");
                             await pc.addIceCandidate(candidate);
                         } catch (e) {
                             console.error("Error adding ICE candidate", e);
                         }
                     } else {
+                        log("Buffering ICE candidate (Remote description not set)");
                         iceCandidatesQueue.current.push(candidate);
                     }
                 }
