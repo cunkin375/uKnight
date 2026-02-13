@@ -245,9 +245,24 @@ export default function LobbyPage() {
         const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
             ]
         });
+
+        // Debug: Log ICE connection state changes
+        pc.oniceconnectionstatechange = () => {
+            log(`ICE Check: ${pc.iceConnectionState}`);
+            if (pc.iceConnectionState === 'failed') {
+                log("ICE connection failed. Verify network/firewall.");
+            }
+        };
+
+        pc.onsignalingstatechange = () => {
+            log(`Signaling State: ${pc.signalingState}`);
+        };
 
         stream.getTracks().forEach(track => {
             pc.addTrack(track, stream);
@@ -264,9 +279,14 @@ export default function LobbyPage() {
         };
 
         pc.ontrack = (event) => {
+            log("Track received: " + event.track.kind);
             if (remoteVideoRef.current) {
-                if (remoteVideoRef.current.srcObject !== event.streams[0]) {
-                    remoteVideoRef.current.srcObject = event.streams[0];
+                const remoteStream = event.streams[0] || new MediaStream([event.track]);
+                remoteVideoRef.current.srcObject = remoteStream;
+                try {
+                    remoteVideoRef.current.play();
+                } catch (e) {
+                    console.error("Autoplay blocked", e);
                 }
             }
         };
