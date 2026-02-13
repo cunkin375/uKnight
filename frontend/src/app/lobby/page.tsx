@@ -148,8 +148,13 @@ export default function LobbyPage() {
     }
 
     const handleMatchFound = async (data: { peerId: string, initiator: boolean }, stream: MediaStream) => {
+        if (currentPeerId === data.peerId) {
+            log("Ignoring duplicate match event for same peer.");
+            return;
+        }
+
         log(`Match found! Partner: ${data.peerId.substring(0, 5)}... Initiator: ${data.initiator}`)
-        setStatus("Connected!")
+        setStatus("Connected! Negotiating...")
         setCurrentPeerId(data.peerId);
         setChatMessages([]); // Clear chat for new match
         setIsChatOpen(false); // Close chat on new match
@@ -158,9 +163,13 @@ export default function LobbyPage() {
 
         if (data.initiator) {
             try {
-                const offer = await peerConnection.current?.createOffer();
-                await peerConnection.current?.setLocalDescription(offer);
-                sendSignal({ type: 'OFFER', sdp: JSON.stringify(offer), targetPeerId: data.peerId });
+                // Short timeout to let the other side initialize
+                setTimeout(async () => {
+                    if (!peerConnection.current) return;
+                    const offer = await peerConnection.current.createOffer();
+                    await peerConnection.current.setLocalDescription(offer);
+                    sendSignal({ type: 'OFFER', sdp: JSON.stringify(offer), targetPeerId: data.peerId });
+                }, 100);
             } catch (err) {
                 console.error("Error creating offer:", err);
             }
