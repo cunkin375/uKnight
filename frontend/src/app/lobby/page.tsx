@@ -257,8 +257,12 @@ export default function LobbyPage() {
 
         const pc = new RTCPeerConnection({
             iceServers: [
+                // Google
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
                 // OpenRelay (Free TURN)
                 {
                     urls: 'turn:openrelay.metered.ca:80',
@@ -274,7 +278,10 @@ export default function LobbyPage() {
                     urls: 'turn:openrelay.metered.ca:443?transport=tcp',
                     username: 'openrelayproject',
                     credential: 'openrelayproject'
-                }
+                },
+                // Extra Public STUNs (Kitchen Sink)
+                { urls: 'stun:stun.services.mozilla.com' },
+                { urls: 'stun:global.stun.twilio.com:3478' }
             ]
         });
 
@@ -282,7 +289,8 @@ export default function LobbyPage() {
         pc.oniceconnectionstatechange = () => {
             log(`ICE Check: ${pc.iceConnectionState}`);
             if (pc.iceConnectionState === 'failed') {
-                log("ICE connection failed. Verify network/firewall.");
+                log("ICE connection failed. Retrying...");
+                pc.restartIce();
             }
         };
 
@@ -296,6 +304,7 @@ export default function LobbyPage() {
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
+                log(`Generated Candidate: ${event.candidate.type} (${event.candidate.protocol})`);
                 sendSignal({
                     type: 'ICE',
                     candidate: JSON.stringify(event.candidate),
