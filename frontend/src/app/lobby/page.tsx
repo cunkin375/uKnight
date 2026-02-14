@@ -6,6 +6,7 @@ import { Mic, MicOff, Video, VideoOff, Settings, Users, Send, MessageSquare, X, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { MediaDeviceSelector } from "@/components/media-device-selector"
 import { useMediaStore } from "@/store/media-store"
+import { useSpamProtection } from "@/hooks/use-spam-protection"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { Client, IMessage } from "@stomp/stompjs"
@@ -41,6 +42,10 @@ export default function LobbyPage() {
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
     const [chatInput, setChatInput] = useState("")
     const [isChatOpen, setIsChatOpen] = useState(false)
+
+    // Spam Protection Hooks
+    const nextButtonSpam = useSpamProtection({ maxAttempts: 10, timeWindow: 5000, cooldownDuration: 5 }); // 10 clicks in 5s -> 5s cooldown
+    // Chat spam protection removed per user request
 
     // Media State
     const [isMicOn, setIsMicOn] = useState(true)
@@ -84,45 +89,7 @@ export default function LobbyPage() {
         }
     }, [videoDeviceId, audioDeviceId])
 
-    // 2. WebRTC & STOMP Logic
-    useEffect(() => {
-        if (!localStream) return;
 
-        const uuid = myUuid.current;
-
-        const client = new Client({
-            brokerURL: 'ws://localhost:8080/ws',
-            reconnectDelay: 5000,
-            debug: (str) => console.log(str),
-            onConnect: () => {
-                log("Connected to Backend! UUID: " + uuid.substring(0, 5))
-                setStatus("Searching for verified students...")
-
-                subscribeToTopics(client, uuid);
-
-                // Join the lobby
-                client.publish({
-                    destination: '/app/join',
-                    headers: { 'uuid': uuid },
-                    body: "University of Central Florida"
-                })
-            },
-            onStompError: (frame) => {
-                log('Broker Error: ' + frame.headers['message'])
-            },
-            onDisconnect: () => {
-                setStatus("Disconnected. Retrying...")
-            }
-        });
-
-        client.activate();
-        stompClient.current = client;
-
-        return () => {
-            if (peerConnection.current) peerConnection.current.close();
-            client.deactivate();
-        }
-    }, [localStream])
 
     const subscribeToTopics = (client: Client, uuid: string) => {
         // Subscribe to match events
@@ -291,9 +258,52 @@ export default function LobbyPage() {
         }
     }
 
+    // 2. WebRTC & STOMP Logic
+    useEffect(() => {
+        if (!localStream) return;
+
+        const uuid = myUuid.current;
+
+        const client = new Client({
+            brokerURL: 'ws://localhost:8080/ws',
+            reconnectDelay: 5000,
+            debug: (str) => console.log(str),
+            onConnect: () => {
+                log("Connected to Backend! UUID: " + uuid.substring(0, 5))
+                setStatus("Searching for verified students...")
+
+                subscribeToTopics(client, uuid);
+
+                // Join the lobby
+                client.publish({
+                    destination: '/app/join',
+                    headers: { 'uuid': uuid },
+                    body: "University of Central Florida"
+                })
+            },
+            onStompError: (frame) => {
+                log('Broker Error: ' + frame.headers['message'])
+            },
+            onDisconnect: () => {
+                setStatus("Disconnected. Retrying...")
+            }
+        });
+
+        client.activate();
+        stompClient.current = client;
+
+        return () => {
+            if (peerConnection.current) peerConnection.current.close();
+            client.deactivate();
+        }
+    }, [localStream])
+
+
     // --- Chat Logic ---
     const sendChat = () => {
         if (!chatInput.trim() || !currentPeerId || !stompClient.current?.connected) return;
+
+        // Chat spam protection removed per user request - allow unlimited messaging
 
         const message = chatInput.trim();
         setChatMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'me', text: message }]);
@@ -308,6 +318,8 @@ export default function LobbyPage() {
 
     // --- Skip Logic ---
     const handleNext = () => {
+        if (!nextButtonSpam.attemptAction()) return;
+
         if (currentPeerId) {
             sendSignal({ type: 'BYE', targetPeerId: currentPeerId });
         }
@@ -439,11 +451,24 @@ export default function LobbyPage() {
                 </Button>
 
                 <Button
-                    className="h-14 px-8 rounded-full bg-white text-black hover:bg-white/90 font-medium shadow-xl shadow-white/10 transition-all active:scale-95"
+                    className={`h-14 px-8 rounded-full font-medium shadow-xl shadow-white/10 transition-all active:scale-95 ${
+                        nextButtonSpam.isCooldown 
+                        ? "bg-red-500/50 text-white cursor-not-allowed" 
+                        : "bg-white text-black hover:bg-white/90"
+                    }`}
                     onClick={handleNext}
+                    disabled={nextButtonSpam.isCooldown}
                 >
-                    <SkipForward className="h-5 w-5 mr-2" />
-                    Next
+                    {nextButtonSpam.isCooldown ? (
+                        <>
+                            <span className="mr-2">Wait {nextButtonSpam.cooldownTime}s</span>
+                        </>
+                    ) : (
+                        <>
+                            <SkipForward className="h-5 w-5 mr-2" />
+                            Next
+                        </>
+                    )}
                 </Button>
 
                 <Dialog>
