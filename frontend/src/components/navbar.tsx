@@ -25,6 +25,11 @@ export function Navbar() {
                     </Link>
                 </div>
                 <nav className="ml-auto flex items-center space-x-4">
+                    <Link href="/lobby">
+                        <Button variant="ghost" size="sm">
+                            Join Room
+                        </Button>
+                    </Link>
                     {user ? (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>

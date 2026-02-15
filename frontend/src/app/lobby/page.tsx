@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Mic, MicOff, Video, VideoOff, Settings, Users, Send, MessageSquare, X, SkipForward } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Mic, MicOff, Video, VideoOff, Settings, Users, Send, MessageSquare, X, SkipForward, Flag } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { MediaDeviceSelector } from "@/components/media-device-selector"
 import { useMediaStore } from "@/store/media-store"
 import { useSpamProtection } from "@/hooks/use-spam-protection"
@@ -11,6 +11,15 @@ import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { Client, IMessage } from "@stomp/stompjs"
 import { Input } from "@/components/ui/input"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "sonner"
 
 type ChatMessage = {
     id: string; // Unique ID for keys
@@ -51,6 +60,31 @@ export default function LobbyPage() {
     const [isMicOn, setIsMicOn] = useState(true)
     const [isVideoOn, setIsVideoOn] = useState(true)
     const { videoDeviceId, audioDeviceId } = useMediaStore()
+
+    // Report State
+    const [isReportOpen, setIsReportOpen] = useState(false)
+    const [reportReason, setReportReason] = useState("")
+    const [reportDetails, setReportDetails] = useState("")
+
+    const handleReport = () => {
+        if (!reportReason) return;
+
+        // Mock backend call
+        log(`Reporting user ${currentPeerId} for ${reportReason}: ${reportDetails}`);
+
+        // In a real app, this would be an API call
+        // await fetch('/api/report', { ... })
+
+        // Simulate successful report
+        toast.success("User reported. Thank you for helping keep the community safe.")
+
+        setIsReportOpen(false);
+        setReportReason("");
+        setReportDetails("");
+
+        // Optionally skip the user after reporting
+        handleNext();
+    }
 
     const log = (msg: string) => {
         console.log(msg)
@@ -451,11 +485,10 @@ export default function LobbyPage() {
                 </Button>
 
                 <Button
-                    className={`h-14 px-8 rounded-full font-medium shadow-xl shadow-white/10 transition-all active:scale-95 ${
-                        nextButtonSpam.isCooldown 
-                        ? "bg-red-500/50 text-white cursor-not-allowed" 
+                    className={`h-14 px-8 rounded-full font-medium shadow-xl shadow-white/10 transition-all active:scale-95 ${nextButtonSpam.isCooldown
+                        ? "bg-red-500/50 text-white cursor-not-allowed"
                         : "bg-white text-black hover:bg-white/90"
-                    }`}
+                        }`}
                     onClick={handleNext}
                     disabled={nextButtonSpam.isCooldown}
                 >
@@ -470,6 +503,44 @@ export default function LobbyPage() {
                         </>
                     )}
                 </Button>
+
+                <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
+                    <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className={`h-12 w-12 rounded-full ${glassButton} bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border-yellow-500/20`} disabled={!currentPeerId}>
+                            <Flag className="h-5 w-5" />
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Report User</DialogTitle>
+                            <DialogDescription>
+                                Please select a reason for reporting this user. This will be reviewed by our team.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <Select onValueChange={setReportReason}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a reason" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="inappropriate">Inappropriate Behavior</SelectItem>
+                                    <SelectItem value="spam">Spam / Advertising</SelectItem>
+                                    <SelectItem value="harassment">Harassment</SelectItem>
+                                    <SelectItem value="other">Other</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Textarea
+                                placeholder="Additional details (optional)"
+                                value={reportDetails}
+                                onChange={(e) => setReportDetails(e.target.value)}
+                            />
+                        </div>
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setIsReportOpen(false)}>Cancel</Button>
+                            <Button onClick={handleReport} disabled={!reportReason}>Submit Report</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 <Dialog>
                     <DialogTrigger asChild>
