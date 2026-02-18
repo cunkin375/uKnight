@@ -148,7 +148,7 @@ export default function LobbyPage() {
     }
 
     const handleMatchFound = async (data: { peerId: string, initiator: boolean }, stream: MediaStream) => {
-        if (currentPeerId === data.peerId) {
+        if (peerConnection.current && peerConnection.current.connectionState !== 'closed' && currentPeerId === data.peerId) {
             log("Ignoring duplicate match event for same peer.");
             return;
         }
@@ -193,8 +193,6 @@ export default function LobbyPage() {
     }
 
     const handleSignal = async (data: any) => {
-        const pc = peerConnection.current;
-
         // Handle SKIP signal (BYE)
         if (data.type === 'BYE') {
             log("Partner skipped.");
@@ -202,6 +200,15 @@ export default function LobbyPage() {
             return;
         }
 
+        // Potential race condition fix: If we receive an OFFER before the match event has 
+        // fully initialized the PeerConnection, we should try to initialize it now.
+        if (!peerConnection.current && data.type === 'OFFER' && localStream) {
+            log("Offer received before match event. Initializing PeerConnection...");
+            createPeerConnection(data.senderId, localStream);
+            setCurrentPeerId(data.senderId);
+        }
+
+        const pc = peerConnection.current;
         if (!pc || pc.signalingState === 'closed') return;
 
         try {
@@ -212,7 +219,6 @@ export default function LobbyPage() {
                 const offer = JSON.parse(data.sdp) as RTCSessionDescriptionInit;
                 if (pc.signalingState === 'closed') return;
                 await pc.setRemoteDescription(offer);
-
                 await processIceQueue();
 
                 if (pc.signalingState === 'closed') return;
@@ -257,29 +263,24 @@ export default function LobbyPage() {
 
         const pc = new RTCPeerConnection({
             iceServers: [
-                // Google
+                // Google STUN servers
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
                 { urls: 'stun:stun3.l.google.com:19302' },
                 { urls: 'stun:stun4.l.google.com:19302' },
-                // OpenRelay (Free TURN)
+                // OpenRelay (Free TURN) - Includes TURNS for bypass through restrictive firewalls
                 {
-                    urls: 'turn:openrelay.metered.ca:80',
+                    urls: [
+                        'turn:openrelay.metered.ca:80',
+                        'turn:openrelay.metered.ca:443',
+                        'turn:openrelay.metered.ca:443?transport=tcp',
+                        'turns:openrelay.metered.ca:443?transport=tcp'
+                    ],
                     username: 'openrelayproject',
                     credential: 'openrelayproject'
                 },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                // Extra Public STUNs (Kitchen Sink)
+                // Secondary public STUNs
                 { urls: 'stun:stun.services.mozilla.com' },
                 { urls: 'stun:global.stun.twilio.com:3478' }
             ]
