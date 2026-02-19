@@ -34,8 +34,8 @@ public class UserService {
         // Set defaults if null
         if (user.getDisplayName() == null)
             user.setDisplayName("");
-        if (user.getPhotoUrl() == null)
-            user.setPhotoUrl("");
+        if (user.getProfilePicture() == null)
+            user.setProfilePicture("");
         if (user.getShowUsername() == null)
             user.setShowUsername(false);
         if (user.getVerified() == null)
