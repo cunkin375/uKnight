@@ -1,59 +1,63 @@
 package com.uknight.server.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import java.time.ZonedDateTime;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
-
+@Entity
+@Table(name = "users")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Entity
-@Table(name = "users")
 public class User {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
-    @Column(nullable = false, unique = true)
-    private String username;
-
-    @Column(nullable = false)
-    private String password; // Hashed password
-
-    private String gender;
-
-    @ElementCollection
-    private List<String> interests;
-
-    @ElementCollection
-    private List<String> classList;
-
-    private Integer schoolYear;
+    @Column(name = "user_id", length = 128)
+    private String userId;
 
     @Column(nullable = false, unique = true)
     private String email;
 
+    @Column(name = "display_name", length = 100)
+    private String displayName;
+
+    @Column(length = 20)
+    private String gender;
+
+    @Column(name = "school_year", length = 20)
+    private String schoolYear;
+
+    @Column(name = "school_email", unique = true)
     private String schoolEmail;
 
-    private boolean isReported = false; // "Strike"
+    @Column(columnDefinition = "boolean default false")
+    private Boolean strike = false;
 
-    private boolean showUsername = true;
+    @Column(name = "show_username", columnDefinition = "boolean default true")
+    private Boolean showUsername = true;
 
-    private boolean isVerified = false;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean verified = false;
 
-    private Long timeSpent = 0L; // Time in seconds
+    @Column(name = "time_spent_minutes", columnDefinition = "integer default 0")
+    private Integer timeSpentMinutes = 0;
 
-    private LocalDateTime joinedDate = LocalDateTime.now();
+    @Column(name = "num_people_met", columnDefinition = "integer default 0")
+    private Integer numPeopleMet = 0;
 
-    private Integer peopleMetCount = 0;
-
+    @Column(name = "university_name", length = 150)
     private String universityName;
 
-    private String profilePictureUrl;
+    @Column(name = "profile_picture", length = 500)
+    private String profilePicture;
+
+    @Column(name = "created_at", updatable = false)
+    private ZonedDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = ZonedDateTime.now();
+    }
 }

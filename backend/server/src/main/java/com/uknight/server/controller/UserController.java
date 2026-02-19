@@ -26,9 +26,21 @@ public class UserController {
         }
     }
 
-    @GetMapping("/{username}")
-    public ResponseEntity<User> getUser(@PathVariable String username) {
-        return userService.getUserByUsername(username)
+    @PostMapping("/login")
+    public ResponseEntity<User> login(@RequestBody User user) {
+        // This endpoint acts as a "get or create" for the user
+        // The frontend sends the Firebase UID and email/metadata
+        try {
+            User loggedInUser = userService.createUser(user);
+            return ResponseEntity.ok(loggedInUser);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUser(@PathVariable String id) {
+        return userService.getUserById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
