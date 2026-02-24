@@ -139,35 +139,47 @@ export default function LobbyPage() {
             return;
         }
 
-        if (!pc || (pc.signalingState as string) === 'closed') return;
+        if (!pc || (pc.connectionState as string) === 'closed') return;
 
         try {
             if (data.type === 'OFFER') {
-                log("Received OFFER")
+                log("Received OFFER");
+
                 if (!currentPeerId && data.senderId) setCurrentPeerId(data.senderId);
 
+                if (!data.sdp) { 
+                    console.error("OFFER missing sdp in OFFER signal"); 
+                    return; 
+                }
+
                 const offer = JSON.parse(data.sdp!) as RTCSessionDescriptionInit;
-                if ((pc.signalingState as string) === 'closed') return;
+                if ((pc.connectionState as string) === 'closed') return;
                 await pc.setRemoteDescription(offer);
 
                 await processIceQueue();
 
-                if ((pc.signalingState as string) === 'closed') return;
+                if ((pc.connectionState as string) === 'closed') return;
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 sendSignal({ type: 'ANSWER', sdp: JSON.stringify(answer), targetPeerId: data.senderId });
 
             } else if (data.type === 'ANSWER') {
                 log("Received ANSWER")
+
+                if (!data.sdp) { 
+                    console.error("OFFER missing sdp in ANSWER signal"); 
+                    return; 
+                }
+
                 const answer = JSON.parse(data.sdp!) as RTCSessionDescriptionInit;
-                if ((pc.signalingState as string) === 'closed') return;
+                if ((pc.connectionState as string) === 'closed') return;
                 await pc.setRemoteDescription(answer);
                 await processIceQueue();
 
             } else if (data.type === 'ICE') {
                 if (data.candidate) {
                     const candidate = JSON.parse(data.candidate) as RTCIceCandidateInit;
-                    if (pc.remoteDescription && (pc.signalingState as string) !== 'closed') {
+                    if (pc.remoteDescription && (pc.connectionState as string) !== 'closed') {
                         try {
                             log("Adding ICE candidate immediately");
                             await pc.addIceCandidate(candidate);
@@ -319,7 +331,11 @@ export default function LobbyPage() {
         subscriptionMatch.current = client.subscribe(`/topic/match/${uuid}`, (message: IMessage) => {
             const data = JSON.parse(message.body) as MatchData
             if (handleMatchFoundRef.current) {
-                handleMatchFoundRef.current(data, localStreamRef.current!)
+                if (!localStreamRef.current) {
+                    console.error("Local stream not ready");
+                    return;
+                }
+                handleMatchFoundRef.current(data, localStreamRef.current)
             }
         })
 
@@ -458,8 +474,7 @@ export default function LobbyPage() {
             if (peerConnection.current) peerConnection.current.close();
             client.deactivate();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [localStream])
+    }, [localStream, log, subscribeToTopics])
 
     // --- UI Variants ---
     const glassButton = "bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/20 text-white shadow-lg transition-all"
