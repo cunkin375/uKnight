@@ -167,7 +167,7 @@ export default function LobbyPage() {
                 log("Received ANSWER")
 
                 if (!data.sdp) { 
-                    console.error("OFFER missing sdp in ANSWER signal"); 
+                    console.error("ANSWER signal missing sdp"); 
                     return; 
                 }
 
