@@ -474,7 +474,7 @@ export default function LobbyPage() {
             if (peerConnection.current) peerConnection.current.close();
             client.deactivate();
         }
-    }, [localStream, log, subscribeToTopics])
+    }, [localStream])
 
     // --- UI Variants ---
     const glassButton = "bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/20 text-white shadow-lg transition-all"
