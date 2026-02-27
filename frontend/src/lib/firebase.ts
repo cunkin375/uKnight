@@ -8,9 +8,8 @@ const firebaseConfig = {
     projectId: "uknight-webcalling-prototype",
     storageBucket: "uknight-webcalling-prototype.firebasestorage.app",
     messagingSenderId: "183062696521",
-    // FIXME: The following keys were missing from the provided configuration:
-    appId: "", // REQUIRED: Please add your appId here
-    measurementId: "" // Optional
+    appId: "1:183062696521:web:5b86d179fadb301a3fe598",
+    measurementId: "G-XBQL0R72NZ"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
