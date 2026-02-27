@@ -1,15 +1,19 @@
 package com.uknight.server.controller;
 
+import com.uknight.server.service.GameService;
 import com.uknight.server.service.MatchmakingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @Controller
@@ -17,6 +21,7 @@ import java.util.Map;
 public class LobbyController {
 
     private final MatchmakingService matchmakingService;
+    private final GameService gameService;
     private final SimpMessagingTemplate messagingTemplate;
 
     // Frontend sends to: /app/join
@@ -89,5 +94,159 @@ public class LobbyController {
             Object payload = Map.of("senderId", senderId, "message", messageContent);
             messagingTemplate.convertAndSend("/topic/chat/" + targetPeerId, payload);
         }
+    }
+
+    // ========================
+    // GAME MESSAGE HANDLERS
+    // ========================
+
+    @MessageMapping("/game/invite")
+    public void handleGameInvite(@Header("uuid") String senderId, @Payload Map<String, String> inviteData) {
+        if (senderId == null) {
+            log.error("Missing uuid header in game invite");
+            return;
+        }
+
+        String targetPeerId = inviteData.get("targetPeerId");
+        String gameType = inviteData.get("gameType");
+
+        log.info("Game invite from {} to {} for type: {}", senderId, targetPeerId, gameType);
+        
+        // Confirmation to sender
+        Map<String, Object> confirmPayload = new HashMap<>();
+        confirmPayload.put("type", "GAME_INVITE_SENT_CONFIRM");
+        confirmPayload.put("targetPeerId", targetPeerId);
+        messagingTemplate.convertAndSend("/topic/game/" + senderId, (Object) confirmPayload);
+
+        if (targetPeerId != null) {
+            String matchId = UUID.randomUUID().toString();
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("senderId", senderId);
+            payload.put("gameType", gameType);
+            payload.put("matchId", matchId);
+            payload.put("type", "GAME_INVITE");
+
+            messagingTemplate.convertAndSend("/topic/game/" + targetPeerId, (Object) payload);
+        }
+    }
+
+    // Frontend sends to: /app/game/accept
+    // Payload should contain: { "targetPeerId": "...", "matchId": "..." }
+    @MessageMapping("/game/accept")
+    public void handleGameAccept(@Header("uuid") String senderId, @Payload Map<String, String> acceptData) {
+        String targetPeerId = acceptData.get("targetPeerId");
+        String matchId = acceptData.get("matchId");
+
+        log.info("Game accept from {} to {} for match: {}", senderId, targetPeerId, matchId);
+
+        if (targetPeerId != null && matchId != null) {
+            // Create the game in the service
+            gameService.createGame(matchId, targetPeerId, senderId);
+
+            // Notify both players that game started
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("type", "GAME_START");
+            payload.put("matchId", matchId);
+
+            messagingTemplate.convertAndSend("/topic/game/" + targetPeerId, (Object) payload);
+            messagingTemplate.convertAndSend("/topic/game/" + senderId, (Object) payload);
+        }
+    }
+
+    // Frontend sends to: /app/game/move
+    // Payload should contain: { "matchId": "...", "dx": 0.0, "dy": 0.0 }
+    @MessageMapping("/game/move")
+    public void handleGameMove(@Header("uuid") String senderId, @Payload Map<String, Object> moveData) {
+        String matchId = (String) moveData.get("matchId");
+        Double dx = ((Number) moveData.get("dx")).doubleValue();
+        Double dy = ((Number) moveData.get("dy")).doubleValue();
+
+        log.info("Game move from {} for match {}: dx={}, dy={}", senderId, matchId, dx, dy);
+
+        if (matchId != null) {
+            // Processing logic
+            var gameOpt = gameService.getGame(matchId);
+            if (gameOpt.isPresent()) {
+                GameService.GameState game = gameOpt.get();
+                String opponentId = senderId.equals(game.getPlayer1Id()) ? game.getPlayer2Id() : game.getPlayer1Id();
+                
+                Map<String, Object> moveBroadcast = new HashMap<>(moveData);
+                moveBroadcast.put("type", "GAME_MOVE_ANNOUNCE");
+                moveBroadcast.put("senderId", senderId);
+
+                messagingTemplate.convertAndSend("/topic/game/" + senderId, (Object) moveBroadcast);
+                messagingTemplate.convertAndSend("/topic/game/" + opponentId, (Object) moveBroadcast);
+            }
+
+            // Process the shot through the game service (updates state)
+            GameService.GameState gameState = gameService.processShot(matchId, senderId, new GameService.Shot(dx, dy));
+
+            if (gameState != null) {
+                // Broadcast final game state to both players (for reconciliation)
+                Map<String, Object> statePayload = new HashMap<>();
+                statePayload.put("type", "GAME_STATE_SYNC");
+                statePayload.put("matchId", matchId);
+                statePayload.put("pucks", serializePucks(gameState.getPucks()));
+                statePayload.put("currentTurn", gameState.getCurrentTurn());
+                statePayload.put("player1Score", gameState.getPlayer1Score());
+                statePayload.put("player2Score", gameState.getPlayer2Score());
+                statePayload.put("round", gameState.getRound());
+                statePayload.put("roundOver", gameState.isRoundOver());
+                statePayload.put("winner", gameState.getWinner());
+
+                messagingTemplate.convertAndSend("/topic/game/" + gameState.getPlayer1Id(), (Object) statePayload);
+                messagingTemplate.convertAndSend("/topic/game/" + gameState.getPlayer2Id(), (Object) statePayload);
+            }
+        }
+    }
+
+    // Frontend sends to: /app/game/close
+    // Payload should contain: { "matchId": "..." }
+    @MessageMapping("/game/close")
+    public void handleGameClose(@Header("uuid") String senderId, @Payload Map<String, String> closeData) {
+        String matchId = closeData.get("matchId");
+
+        log.info("Game close from {} for match: {}", senderId, matchId);
+
+        if (matchId != null) {
+            // Get the game to find the opponent
+            var gameOpt = gameService.getGame(matchId);
+            if (gameOpt.isPresent()) {
+                GameService.GameState gameState = gameOpt.get();
+                String opponentId = senderId.equals(gameState.getPlayer1Id())
+                    ? gameState.getPlayer2Id()
+                    : gameState.getPlayer1Id();
+
+                // Notify opponent that game was closed
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("type", "GAME_CLOSED");
+                payload.put("matchId", matchId);
+                messagingTemplate.convertAndSend("/topic/game/" + opponentId, (Object) payload);
+            }
+
+            // Remove the game
+            gameService.removeGame(matchId);
+        }
+    }
+
+    // Helper method to serialize pucks for JSON
+    private Object[] serializePucks(GameService.Puck[] pucks) {
+        if (pucks == null) return new Object[0];
+
+        Object[] result = new Object[pucks.length];
+        for (int i = 0; i < pucks.length; i++) {
+            if (pucks[i] != null) {
+                Map<String, Object> puckData = new HashMap<>();
+                puckData.put("x", pucks[i].x);
+                puckData.put("y", pucks[i].y);
+                puckData.put("radius", pucks[i].radius);
+                puckData.put("vx", pucks[i].vx);
+                puckData.put("vy", pucks[i].vy);
+                result[i] = puckData;
+            } else {
+                result[i] = null;
+            }
+        }
+        return result;
     }
 }

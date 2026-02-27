@@ -10,6 +10,7 @@ import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { Client, IMessage, StompSubscription } from "@stomp/stompjs"
 import { Input } from "@/components/ui/input"
+import { KnockoutGame } from "@/components/knockout/KnockoutGame"
 
 type ChatMessage = {
     id: string; // Unique ID for keys
@@ -45,6 +46,7 @@ export default function LobbyPage() {
     const subscriptionMatch = useRef<StompSubscription | null>(null)
     const subscriptionSignal = useRef<StompSubscription | null>(null)
     const subscriptionChat = useRef<StompSubscription | null>(null)
+    const subscriptionGame = useRef<StompSubscription | null>(null)
 
     // State
     const [localStream, setLocalStream] = useState<MediaStream | null>(null)
@@ -56,6 +58,11 @@ export default function LobbyPage() {
     const [isMicOn, setIsMicOn] = useState(true)
     const [isVideoOn, setIsVideoOn] = useState(true)
     const { videoDeviceId, audioDeviceId } = useMediaStore()
+
+    // Game state
+    const [isGameActive, setIsGameActive] = useState(false)
+    const [gameMatchId, setGameMatchId] = useState<string | null>(null)
+    const [gameInvite, setGameInvite] = useState<{ senderId: string, matchId: string } | null>(null)
 
     // --- Mutable refs for latest callbacks and state ---
     const localStreamRef = useRef<MediaStream | null>(null)
@@ -299,7 +306,7 @@ export default function LobbyPage() {
             try {
                 setTimeout(async () => {
                     if (!peerConnection.current) return;
-                    
+
                     const hasAudio = stream.getAudioTracks().length > 0;
                     const hasVideo = stream.getVideoTracks().length > 0;
                     if (!hasAudio) peerConnection.current.addTransceiver('audio', { direction: 'recvonly' });
@@ -337,12 +344,45 @@ export default function LobbyPage() {
                 setIsChatOpen(true);
             }
         })
+
+        subscriptionGame.current = client.subscribe(`/topic/game/${uuid}`, (message: IMessage) => {
+            const data = JSON.parse(message.body);
+            console.log("GAME TOPIC DATA RECEIVED:", data);
+
+            if (data.type === 'GAME_INVITE_SENT_CONFIRM') {
+                console.log("Server confirmed invite sent to:", data.targetPeerId);
+                setChatMessages(prev => [...prev, {
+                    id: crypto.randomUUID(),
+                    sender: 'me',
+                    text: `(Server confirmed: Invite delivered to partner)`
+                }]);
+            } else if (data.type === 'GAME_INVITE') {
+                setGameInvite({ senderId: data.senderId, matchId: data.matchId });
+                // Also show in chat for better visibility
+                setChatMessages(prev => [...prev, {
+                    id: crypto.randomUUID(),
+                    sender: 'partner',
+                    text: "Challenge! Partner wants to play Knockout. Use the buttons above to respond."
+                }]);
+            } else if (data.type === 'GAME_START') {
+                setGameMatchId(data.matchId);
+                setIsGameActive(true);
+            }
+        })
     }
 
     const sendChat = () => {
         if (!chatInput.trim() || !currentPeerId || !stompClient.current?.connected) return;
 
         const message = chatInput.trim();
+
+        // Handle slash commands
+        if (message.toLowerCase() === '/knockout') {
+            sendGameInvite();
+            setChatInput("");
+            return;
+        }
+
         setChatMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'me', text: message }]);
         setChatInput("");
 
@@ -351,6 +391,46 @@ export default function LobbyPage() {
             headers: { 'uuid': myUuid.current },
             body: JSON.stringify({ targetPeerId: currentPeerId, message: message })
         });
+    }
+
+    const sendGameInvite = () => {
+        if (!currentPeerId || !stompClient.current?.connected) {
+            console.error("Cannot send invite: ", { currentPeerId, connected: stompClient.current?.connected });
+            return;
+        }
+
+        console.log("Sending game invite to:", currentPeerId);
+
+        // Add feedback to chat history for the sender
+        setChatMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            sender: 'me',
+            text: "Challenge sent! Waiting for partner to accept..."
+        }]);
+
+        stompClient.current.publish({
+            destination: '/app/game/invite',
+            headers: { 'uuid': myUuid.current },
+            body: JSON.stringify({ targetPeerId: currentPeerId, gameType: 'knockout' })
+        });
+    }
+
+    const acceptGameInvite = () => {
+        if (!gameInvite || !stompClient.current?.connected) return;
+
+        stompClient.current.publish({
+            destination: '/app/game/accept',
+            headers: { 'uuid': myUuid.current },
+            body: JSON.stringify({ targetPeerId: gameInvite.senderId, matchId: gameInvite.matchId })
+        });
+
+        setGameMatchId(gameInvite.matchId);
+        setGameInvite(null);
+        setIsGameActive(true);
+    }
+
+    const declineGameInvite = () => {
+        setGameInvite(null);
     }
 
     const handleNext = () => {
@@ -404,7 +484,7 @@ export default function LobbyPage() {
                         setStatus("Ready (No Media). Connecting to server...")
                     }
                 }
-                
+
                 setLocalStream(stream);
                 setIsVideoOn(stream.getVideoTracks().length > 0);
                 setIsMicOn(stream.getAudioTracks().length > 0);
@@ -582,7 +662,18 @@ export default function LobbyPage() {
                         className="absolute top-0 right-0 h-full w-full md:w-96 bg-black/40 backdrop-blur-xl border-l border-white/10 z-40 flex flex-col shadow-2xl"
                     >
                         <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                            <h3 className="text-white font-medium">Chat</h3>
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-white font-medium">Chat</h3>
+                                {currentPeerId && !isGameActive && (
+                                    <Button
+                                        size="sm"
+                                        onClick={sendGameInvite}
+                                        className="bg-emerald-500 hover:bg-emerald-600 text-white h-8 text-xs"
+                                    >
+                                        Play
+                                    </Button>
+                                )}
+                            </div>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setIsChatOpen(false)}>
                                 <X className="h-4 w-4" />
                             </Button>
@@ -608,6 +699,33 @@ export default function LobbyPage() {
                             )}
                         </div>
 
+                        {gameInvite && (
+                            <div className="p-4 border-b border-white/10 bg-emerald-500/10">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm text-white">
+                                        <span className="font-medium">Partner</span> wants to play Knockout!
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            size="sm"
+                                            onClick={acceptGameInvite}
+                                            className="bg-emerald-500 hover:bg-emerald-600 text-white"
+                                        >
+                                            Accept
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={declineGameInvite}
+                                            className="text-white/70 hover:text-white hover:bg-white/10"
+                                        >
+                                            Decline
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="p-4 border-t border-white/10 bg-black/20">
                             <form
                                 onSubmit={(e) => { e.preventDefault(); sendChat(); }}
@@ -628,6 +746,20 @@ export default function LobbyPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Knockout Game Overlay */}
+            {isGameActive && gameMatchId && (
+                <KnockoutGame
+                    matchId={gameMatchId}
+                    myId={myUuid.current}
+                    opponentId={currentPeerId!}
+                    stompClient={stompClient.current}
+                    onClose={() => {
+                        setIsGameActive(false);
+                        setGameMatchId(null);
+                    }}
+                />
+            )}
         </div>
     )
 }
