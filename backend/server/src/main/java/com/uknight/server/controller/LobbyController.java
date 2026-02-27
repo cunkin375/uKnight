@@ -4,7 +4,6 @@ import com.uknight.server.service.GameService;
 import com.uknight.server.service.MatchmakingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -101,10 +100,10 @@ public class LobbyController {
     // ========================
 
     @MessageMapping("/game/invite")
-    public void handleGameInvite(@Header("uuid") String senderId, @Payload Map<String, String> inviteData) {
+    public void handleGameInvite(@Payload Map<String, String> inviteData, SimpMessageHeaderAccessor headerAccessor) {
+        String senderId = headerAccessor.getFirstNativeHeader("uuid");
         if (senderId == null) {
-            log.error("Missing uuid header in game invite");
-            return;
+            senderId = headerAccessor.getSessionId();
         }
 
         String targetPeerId = inviteData.get("targetPeerId");
@@ -133,7 +132,12 @@ public class LobbyController {
     // Frontend sends to: /app/game/accept
     // Payload should contain: { "targetPeerId": "...", "matchId": "..." }
     @MessageMapping("/game/accept")
-    public void handleGameAccept(@Header("uuid") String senderId, @Payload Map<String, String> acceptData) {
+    public void handleGameAccept(@Payload Map<String, String> acceptData, SimpMessageHeaderAccessor headerAccessor) {
+        String senderId = headerAccessor.getFirstNativeHeader("uuid");
+        if (senderId == null) {
+             senderId = headerAccessor.getSessionId();
+        }
+
         String targetPeerId = acceptData.get("targetPeerId");
         String matchId = acceptData.get("matchId");
 
@@ -156,7 +160,12 @@ public class LobbyController {
     // Frontend sends to: /app/game/move
     // Payload should contain: { "matchId": "...", "dx": 0.0, "dy": 0.0 }
     @MessageMapping("/game/move")
-    public void handleGameMove(@Header("uuid") String senderId, @Payload Map<String, Object> moveData) {
+    public void handleGameMove(@Payload Map<String, Object> moveData, SimpMessageHeaderAccessor headerAccessor) {
+        String senderId = headerAccessor.getFirstNativeHeader("uuid");
+        if (senderId == null) {
+             senderId = headerAccessor.getSessionId();
+        }
+
         String matchId = (String) moveData.get("matchId");
         Double dx = ((Number) moveData.get("dx")).doubleValue();
         Double dy = ((Number) moveData.get("dy")).doubleValue();
@@ -203,7 +212,12 @@ public class LobbyController {
     // Frontend sends to: /app/game/close
     // Payload should contain: { "matchId": "..." }
     @MessageMapping("/game/close")
-    public void handleGameClose(@Header("uuid") String senderId, @Payload Map<String, String> closeData) {
+    public void handleGameClose(@Payload Map<String, String> closeData, SimpMessageHeaderAccessor headerAccessor) {
+        String senderId = headerAccessor.getFirstNativeHeader("uuid");
+        if (senderId == null) {
+             senderId = headerAccessor.getSessionId();
+        }
+
         String matchId = closeData.get("matchId");
 
         log.info("Game close from {} for match: {}", senderId, matchId);

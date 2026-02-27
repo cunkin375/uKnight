@@ -509,8 +509,10 @@ export default function LobbyPage() {
 
         const uuid = myUuid.current;
 
+        const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
+
         const client = new Client({
-            brokerURL: 'wss://uknight-backend-536429702801.us-central1.run.app/ws',
+            brokerURL: wsUrl,
             reconnectDelay: 5000,
             debug: (str) => console.log(str),
             onConnect: () => {
@@ -659,7 +661,7 @@ export default function LobbyPage() {
                         animate={{ x: 0, opacity: 1 }}
                         exit={{ x: "100%", opacity: 0 }}
                         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                        className="absolute top-0 right-0 h-full w-full md:w-96 bg-black/40 backdrop-blur-xl border-l border-white/10 z-40 flex flex-col shadow-2xl"
+                        className="absolute top-14 right-0 bottom-0 w-full md:w-96 bg-black/40 backdrop-blur-xl border-l border-white/10 z-40 flex flex-col shadow-2xl"
                     >
                         <div className="p-4 border-b border-white/10 flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -689,7 +691,7 @@ export default function LobbyPage() {
                                 chatMessages.map((msg) => (
                                     <div key={msg.id} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
                                         <div className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm backdrop-blur-md ${msg.sender === 'me'
-                                            ? 'bg-primary/20 text-primary-foreground border border-primary/20 rounded-tr-sm'
+                                            ? 'bg-white/20 text-white border border-white/20 rounded-tr-sm'
                                             : 'bg-white/10 text-white border border-white/10 rounded-tl-sm'
                                             }`}>
                                             {msg.text}
