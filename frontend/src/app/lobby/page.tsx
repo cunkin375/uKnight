@@ -18,7 +18,7 @@ type ChatMessage = {
     text: string;
 }
 
-type SignalType = 'OFFER' | 'ANSWER' | 'ICE' | 'BYE';
+type SignalType = 'OFFER' | 'ANSWER' | 'ICE' | 'BYE' | 'MEDIA_STATE';
 
 interface SignalData {
     type: SignalType;
@@ -26,6 +26,7 @@ interface SignalData {
     candidate?: string;
     senderId?: string;
     targetPeerId?: string;
+    mediaState?: { audioEnabled: boolean, videoEnabled: boolean };
 }
 
 interface MatchData {
@@ -41,6 +42,8 @@ export default function LobbyPage() {
     const peerConnection = useRef<RTCPeerConnection | null>(null)
     const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([])
     const myUuid = useRef<string>(crypto.randomUUID())
+    const lastNextTime = useRef<number>(0)
+    const lastChatTime = useRef<number>(0)
 
     // Subscriptions
     const subscriptionMatch = useRef<StompSubscription | null>(null)
@@ -57,6 +60,8 @@ export default function LobbyPage() {
     const [isChatOpen, setIsChatOpen] = useState(false)
     const [isMicOn, setIsMicOn] = useState(true)
     const [isVideoOn, setIsVideoOn] = useState(true)
+    const [remoteMicOn, setRemoteMicOn] = useState(true)
+    const [remoteVideoOn, setRemoteVideoOn] = useState(true)
     const { videoDeviceId, audioDeviceId } = useMediaStore()
 
     // Game state
@@ -143,6 +148,12 @@ export default function LobbyPage() {
         if (data.type === 'BYE') {
             log("Partner skipped.");
             handlePartnerDisconnect();
+            return;
+        }
+
+        if (data.type === 'MEDIA_STATE' && data.mediaState) {
+            setRemoteMicOn(data.mediaState.audioEnabled);
+            setRemoteVideoOn(data.mediaState.videoEnabled);
             return;
         }
 
@@ -299,6 +310,8 @@ export default function LobbyPage() {
         setCurrentPeerId(data.peerId);
         setChatMessages([]);
         setIsChatOpen(false);
+        setRemoteMicOn(true);
+        setRemoteVideoOn(true);
 
         createPeerConnection(data.peerId, stream);
 
@@ -372,6 +385,10 @@ export default function LobbyPage() {
     }
 
     const sendChat = () => {
+        const now = Date.now();
+        if (now - lastChatTime.current < 1000) return; // 1 second cooldown
+        lastChatTime.current = now;
+
         if (!chatInput.trim() || !currentPeerId || !stompClient.current?.connected) return;
 
         const message = chatInput.trim();
@@ -434,6 +451,10 @@ export default function LobbyPage() {
     }
 
     const handleNext = () => {
+        const now = Date.now();
+        if (now - lastNextTime.current < 2000) return; // 2 second cooldown
+        lastNextTime.current = now;
+
         if (currentPeerId) {
             sendSignal({ type: 'BYE', targetPeerId: currentPeerId });
         }
@@ -441,16 +462,24 @@ export default function LobbyPage() {
     }
 
     const toggleMic = () => {
-        setIsMicOn(!isMicOn)
+        const nextState = !isMicOn;
+        setIsMicOn(nextState)
         if (localStream) {
-            localStream.getAudioTracks().forEach(t => t.enabled = !isMicOn);
+            localStream.getAudioTracks().forEach(t => t.enabled = nextState);
+        }
+        if (currentPeerId) {
+            sendSignal({ type: 'MEDIA_STATE', targetPeerId: currentPeerId, mediaState: { audioEnabled: nextState, videoEnabled: isVideoOn }});
         }
     }
 
     const toggleVideo = () => {
-        setIsVideoOn(!isVideoOn)
+        const nextState = !isVideoOn;
+        setIsVideoOn(nextState)
         if (localStream) {
-            localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOn);
+            localStream.getVideoTracks().forEach(t => t.enabled = nextState);
+        }
+        if (currentPeerId) {
+            sendSignal({ type: 'MEDIA_STATE', targetPeerId: currentPeerId, mediaState: { audioEnabled: isMicOn, videoEnabled: nextState }});
         }
     }
 
@@ -555,6 +584,23 @@ export default function LobbyPage() {
                     playsInline
                     className="h-full w-full object-cover"
                 />
+                
+                {/* Remote Media Offline Overlay */}
+                {currentPeerId && !remoteVideoOn && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md z-10 transition-opacity">
+                        <VideoOff className="h-16 w-16 text-white/50 mb-4 animate-pulse" />
+                        <p className="text-white/70 text-lg font-medium">Partner turned off their camera</p>
+                    </div>
+                )}
+                
+                {/* Remote Muted Icon */}
+                {currentPeerId && !remoteMicOn && remoteVideoOn && (
+                    <div className="absolute top-8 left-1/2 -translate-x-1/2 z-10 bg-black/60 px-4 py-2 rounded-full backdrop-blur-md flex items-center gap-2 shadow-xl border border-white/10">
+                        <MicOff className="h-5 w-5 text-red-500" />
+                        <span className="text-white text-sm font-medium">Partner Muted</span>
+                    </div>
+                )}
+
                 {/* Status Overlay */}
                 {!currentPeerId && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md z-10">
@@ -571,7 +617,7 @@ export default function LobbyPage() {
 
             {/* Local Video (Floating PIP) */}
             <motion.div
-                className="absolute bottom-4 left-4 w-32 md:w-48 aspect-video rounded-xl overflow-hidden shadow-2xl border border-white/20 z-20 bg-black/50 backdrop-blur-sm"
+                className="absolute bottom-32 md:bottom-8 lg:bottom-12 left-4 md:left-8 w-32 md:w-48 aspect-video rounded-xl overflow-hidden shadow-2xl border border-white/20 z-20 bg-black/50 backdrop-blur-sm"
                 drag
                 dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
             >
@@ -588,52 +634,60 @@ export default function LobbyPage() {
                         Video Off
                     </div>
                 )}
+                {!isMicOn && (
+                    <div className="absolute bottom-2 right-2 bg-black/60 p-1.5 rounded-full backdrop-blur-md z-30">
+                        <MicOff className="h-3 w-3 md:h-4 md:w-4 text-red-500" />
+                    </div>
+                )}
+                <div className="absolute top-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] md:text-xs text-white/90 backdrop-blur-md z-30 font-medium">
+                    You
+                </div>
             </motion.div>
 
             {/* Controls Bar */}
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 z-30">
+            <div className="absolute bottom-8 left-0 right-0 flex flex-wrap justify-center items-center gap-3 px-4 z-30">
                 <Button
                     variant="ghost"
                     size="icon"
-                    className={`h-14 w-14 rounded-full ${glassButton} ${!isMicOn ? "bg-red-500/20 text-red-500 border-red-500/30 hover:bg-red-500/30" : ""}`}
+                    className={`h-12 w-12 md:h-14 md:w-14 shrink-0 rounded-full ${glassButton} ${!isMicOn ? "bg-red-500/20 text-red-500 border-red-500/30 hover:bg-red-500/30" : ""}`}
                     onClick={toggleMic}
                 >
-                    {isMicOn ? <Mic className="h-6 w-6" /> : <MicOff className="h-6 w-6" />}
+                    {isMicOn ? <Mic className="h-5 w-5 md:h-6 md:w-6" /> : <MicOff className="h-5 w-5 md:h-6 md:w-6" />}
                 </Button>
 
                 <Button
                     variant="ghost"
                     size="icon"
-                    className={`h-14 w-14 rounded-full ${glassButton} ${!isVideoOn ? "bg-red-500/20 text-red-500 border-red-500/30 hover:bg-red-500/30" : ""}`}
+                    className={`h-12 w-12 md:h-14 md:w-14 shrink-0 rounded-full ${glassButton} ${!isVideoOn ? "bg-red-500/20 text-red-500 border-red-500/30 hover:bg-red-500/30" : ""}`}
                     onClick={toggleVideo}
                 >
-                    {isVideoOn ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
+                    {isVideoOn ? <Video className="h-5 w-5 md:h-6 md:w-6" /> : <VideoOff className="h-5 w-5 md:h-6 md:w-6" />}
                 </Button>
 
                 <Button
                     variant="ghost"
                     size="icon"
-                    className={`h-14 w-14 rounded-full ${glassButton}`}
+                    className={`h-12 w-12 md:h-14 md:w-14 shrink-0 rounded-full ${glassButton}`}
                     onClick={() => setIsChatOpen(!isChatOpen)}
                 >
-                    <MessageSquare className="h-6 w-6" />
+                    <MessageSquare className="h-5 w-5 md:h-6 md:w-6" />
                     {chatMessages.length > 0 && !isChatOpen && (
-                        <span className="absolute top-2 right-2 h-3 w-3 bg-red-500 rounded-full border border-black" />
+                        <span className="absolute top-2 right-2 h-2.5 w-2.5 md:h-3 md:w-3 bg-red-500 rounded-full border border-black" />
                     )}
                 </Button>
 
                 <Button
-                    className="h-14 px-8 rounded-full bg-white text-black hover:bg-white/90 font-medium shadow-xl shadow-white/10 transition-all active:scale-95"
+                    className="h-12 md:h-14 px-6 md:px-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 font-medium shadow-xl shadow-white/10 transition-all active:scale-95"
                     onClick={handleNext}
                 >
-                    <SkipForward className="h-5 w-5 mr-2" />
+                    <SkipForward className="h-4 w-4 md:h-5 md:w-5 mr-2" />
                     Next
                 </Button>
 
                 <Dialog>
                     <DialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className={`h-12 w-12 rounded-full ${glassButton}`}>
-                            <Settings className="h-5 w-5" />
+                        <Button variant="ghost" size="icon" className={`h-10 w-10 md:h-12 md:w-12 shrink-0 rounded-full ${glassButton}`}>
+                            <Settings className="h-4 w-4 md:h-5 md:w-5" />
                         </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -645,8 +699,8 @@ export default function LobbyPage() {
                 </Dialog>
 
                 <Link href="/">
-                    <Button variant="ghost" size="icon" className={`h-12 w-12 rounded-full ${glassButton} bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/20`}>
-                        <X className="h-5 w-5" />
+                    <Button variant="ghost" size="icon" className={`h-10 w-10 md:h-12 md:w-12 shrink-0 rounded-full ${glassButton} bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/20`}>
+                        <X className="h-4 w-4 md:h-5 md:w-5" />
                     </Button>
                 </Link>
             </div>

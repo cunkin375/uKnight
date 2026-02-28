@@ -1,49 +1,59 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Mic, Video, PhoneOff } from "lucide-react"
+import { Mic, Video, PhoneOff } from "lucide-react"
 
 export function LiveDemo() {
+    const [step, setStep] = useState(0)
+    
+    // Initialize with the first message to avoid synchronous setState in useEffect
     const [messages, setMessages] = useState<
         { id: number; sender: "You" | "Stranger"; text: string }[]
-    >([])
-    const [step, setStep] = useState(0)
+    >([{ id: 0, sender: "Stranger", text: "Hey! Biology major here from UCLA. You?" }])
 
-    const conversation = [
+    const conversation = React.useMemo(() => [
         { sender: "Stranger", text: "Hey! Biology major here from UCLA. You?" },
         { sender: "You", text: "Comp Sci at Berkeley! Working on a project rn." },
         { sender: "Stranger", text: "No way, I'm stuck on a React bug myself lol." },
         { sender: "You", text: "Haha small world. Want to sync up?" },
-    ] as const
+    ] as const, [])
 
     useEffect(() => {
         const interval = setInterval(() => {
-            setStep((prev) => (prev + 1) % (conversation.length + 4)) // +4 for pause at end
+            setStep((prev) => {
+                const nextStep = (prev + 1) % (conversation.length + 4)
+                
+                // Add message if we are in the conversation steps
+                if (nextStep > 0 && nextStep <= conversation.length) {
+                    setMessages((prevMsgs) => [
+                        ...prevMsgs, 
+                        { ...conversation[nextStep - 1], id: Date.now() }
+                    ])
+                } else if (nextStep === 0) {
+                    // Reset on cycle loop
+                    setMessages([{ id: Date.now(), sender: "Stranger", text: "Hey! Biology major here from UCLA. You?" }])
+                }
+                
+                return nextStep
+            })
         }, 1500)
 
         return () => clearInterval(interval)
-    }, [])
+    }, [conversation])
 
-    useEffect(() => {
-        if (step === 0) {
-            setMessages([{ ...conversation[0], id: Date.now() }])
-        } else if (step < conversation.length) {
-            setMessages((prev) => [...prev, { ...conversation[step], id: Date.now() }])
-        }
-    }, [step])
 
     return (
         <div className="relative mx-auto max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b bg-background p-3">
                 <div className="flex items-center gap-2">
-                    <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                    <span className="text-sm font-medium">Live Connection</span>
+                    <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+                    <span className="text-sm font-medium text-amber-500">Live Demo</span>
                 </div>
-                <Badge variant="outline" className="border-green-500/20 bg-green-500/10 text-green-500 text-xs hover:bg-green-500/10">
+                <Badge variant="outline" className="border-amber-500/20 bg-amber-500/10 text-amber-500 text-xs hover:bg-amber-500/10">
                     Encrypted
                 </Badge>
             </div>
