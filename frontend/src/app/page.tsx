@@ -29,24 +29,24 @@ export default function Home() {
               >
                 <div className="inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20 mb-6">
                   <span className="flex h-2 w-2 rounded-full bg-primary mr-2 animate-pulse"></span>
-                  Now live at 50+ Universities
+                  Now live!
                 </div>
-                <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl">
+                <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
                   The Connective Layer for <br />
-                  <span className="bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                  <span className="bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
                     University Students
                   </span>
                 </h1>
                 <p className="mt-6 text-lg text-muted-foreground sm:text-xl leading-relaxed">
-                  Experience the spontaneity of meeting new people, exclusively with your verified peers. No bots, no strangers, just students.
+                  Experience the <span className="text-amber-500 font-medium">spontaneity</span> of meeting new people, exclusively with your <span className="text-amber-500 font-medium">verified peers</span>. No bots, no strangers, just students.
                 </p>
-                <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row lg:justify-start">
-                  <Link href="/lobby">
-                    <Button size="lg" className="h-12 w-full px-8 text-base shadow-lg shadow-primary/25 sm:w-auto hover:scale-105 transition-transform">
+                <div className="mt-8 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 w-full">
+                  <Link href="/lobby" className="w-full sm:w-auto">
+                    <Button size="lg" className="h-12 w-full px-8 text-base shadow-lg shadow-primary/25 hover:scale-105 transition-transform">
                       Connect with .edu Email
                     </Button>
                   </Link>
-                  <Button variant="outline" size="lg" className="h-12 w-full px-8 text-base sm:w-auto hover:bg-muted/50">
+                  <Button variant="outline" size="lg" className="h-12 w-full sm:w-auto px-8 text-base hover:bg-muted/50">
                     See how it works
                   </Button>
                 </div>
@@ -59,7 +59,7 @@ export default function Home() {
                 transition={{ delay: 0.2, duration: 0.6 }}
                 className="relative hidden lg:block"
               >
-                <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-primary to-purple-600 opacity-20 blur-xl" />
+                <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 opacity-20 blur-xl" />
                 <LiveDemo />
               </motion.div>
             </div>
@@ -72,10 +72,10 @@ export default function Home() {
             <p className="mb-6 text-sm font-semibold text-muted-foreground uppercase tracking-wider">Trusted by students at</p>
             <div className="overflow-hidden">
               <div className="flex animate-marquee gap-16 whitespace-nowrap opacity-50 grayscale transition-all hover:grayscale-0">
-                {["Harvard", "MIT", "Stanford", "Berkeley", "UCLA", "Columbia", "Yale", "Princeton", "Cornell", "UPenn", "NYU", "USC"].map((uni) => (
+                {["UCF"].map((uni) => (
                   <span key={uni} className="text-xl font-bold">{uni}</span>
                 ))}
-                {["Harvard", "MIT", "Stanford", "Berkeley", "UCLA", "Columbia", "Yale", "Princeton", "Cornell", "UPenn", "NYU", "USC"].map((uni) => (
+                {["UCF"].map((uni) => (
                   <span key={uni + "-dup"} className="text-xl font-bold">{uni}</span>
                 ))}
               </div>

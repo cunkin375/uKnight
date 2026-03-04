@@ -23,7 +23,7 @@ const features = [
     {
         title: "Ghost Mode Enabled.",
         description: "Zero message history. Zero recording. What happens on uKnight stays on uKnight. Ephemeral by design.",
-        color: "bg-purple-500",
+        color: "bg-amber-500",
     },
 ]
 
@@ -83,7 +83,7 @@ export function FeatureScroll() {
                             <motion.div
                                 animate={{ backgroundColor: features[activeFeature].color.replace('bg-', '') }}
                                 className="absolute -z-10 w-[400px] h-[700px] opacity-20 blur-[100px] transition-colors duration-700"
-                                style={{ backgroundColor: features[activeFeature].color === "bg-indigo-500" ? "#6366f1" : features[activeFeature].color === "bg-yellow-500" ? "#eab308" : features[activeFeature].color === "bg-blue-500" ? "#3b82f6" : "#a855f7" }}
+                                style={{ backgroundColor: features[activeFeature].color === "bg-indigo-500" ? "#6366f1" : features[activeFeature].color === "bg-yellow-500" ? "#eab308" : features[activeFeature].color === "bg-blue-500" ? "#3b82f6" : "#f59e0b" }}
                             />
                         </div>
                     </div>
