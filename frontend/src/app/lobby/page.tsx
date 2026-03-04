@@ -6,7 +6,6 @@ import { Mic, MicOff, Video, VideoOff, Settings, Users, Send, MessageSquare, X, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { MediaDeviceSelector } from "@/components/media-device-selector"
 import { useMediaStore } from "@/store/media-store"
-import { useSpamProtection } from "@/hooks/use-spam-protection"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { Client, IMessage } from "@stomp/stompjs"
@@ -42,10 +41,6 @@ export default function LobbyPage() {
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
     const [chatInput, setChatInput] = useState("")
     const [isChatOpen, setIsChatOpen] = useState(false)
-
-    // Spam Protection Hooks
-    const nextButtonSpam = useSpamProtection({ maxAttempts: 10, timeWindow: 5000, cooldownDuration: 5 }); // 10 clicks in 5s -> 5s cooldown
-    // Chat spam protection removed per user request
 
     // Media State
     const [isMicOn, setIsMicOn] = useState(true)
@@ -397,8 +392,6 @@ export default function LobbyPage() {
 
     // --- Skip Logic ---
     const handleNext = () => {
-        if (!nextButtonSpam.attemptAction()) return;
-
         if (currentPeerId) {
             sendSignal({ type: 'BYE', targetPeerId: currentPeerId });
         }
@@ -530,24 +523,11 @@ export default function LobbyPage() {
                 </Button>
 
                 <Button
-                    className={`h-14 px-8 rounded-full font-medium shadow-xl shadow-white/10 transition-all active:scale-95 ${
-                        nextButtonSpam.isCooldown 
-                        ? "bg-red-500/50 text-white cursor-not-allowed" 
-                        : "bg-white text-black hover:bg-white/90"
-                    }`}
+                    className={`h-14 px-8 rounded-full font-medium shadow-xl shadow-white/10 transition-all active:scale-95`}
                     onClick={handleNext}
-                    disabled={nextButtonSpam.isCooldown}
                 >
-                    {nextButtonSpam.isCooldown ? (
-                        <>
-                            <span className="mr-2">Wait {nextButtonSpam.cooldownTime}s</span>
-                        </>
-                    ) : (
-                        <>
-                            <SkipForward className="h-5 w-5 mr-2" />
-                            Next
-                        </>
-                    )}
+                    <SkipForward className="h-5 w-5 mr-2" />
+                    Next
                 </Button>
 
                 <Dialog>
